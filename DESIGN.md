@@ -59,8 +59,9 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 | 저장소 | SQLite + sqlite-vec | WAL 모드로 동시성 안전, 벡터 유사도 검색 지원 |
 | DB 바인딩 | `better-sqlite3` | 동기 API, 네이티브 성능, Node.js 최적 |
 | 벡터 확장 | `sqlite-vec` | SQLite 벡터 유사도 검색 확장 (float[384]) |
+| 임베딩 모델 | `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` | 384차원 다국어 임베딩, 오프라인 실행, 2.4ms/건 |
 | 훅 시스템 | Claude Code Hooks API | 바닐라 Claude Code 내장 기능 |
-| 분석 | `claude --print` (AI 에이전트) | 의미 기반 분석, 한국어/영어 완벽 지원 |
+| 분석 | `claude --print` (AI 에이전트) | 패턴 분석 + 제안 생성 (임베딩은 Transformers.js) |
 | 설정 | JSON | Claude Code settings.json과 동일 패턴 |
 
 > **의존성 정책 변경**: 초기 설계의 "외부 npm 패키지 제로" 정책에서 "최소 의존성" 정책으로 전환.
@@ -150,7 +151,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │  │                                 │        │                │   │
 │  │                                 │        ▼                │   │
 │  │                                 │  analysis_cache 테이블   │   │
-│  │                                 └→ 배치 임베딩 생성        │   │
+│  │                                 └→ 배치 임베딩 생성 (Transformers.js) │   │
 │  │                                                           │   │
 │  │  Session Start ──→ [SessionStart] ──→ DB 캐시 주입        │   │
 │  │                                  ──→ 이전 세션 컨텍스트    │   │
@@ -513,27 +514,36 @@ export function getSessionEvents(sessionId, limit) {
 
 /**
  * 임베딩 생성 (배치)
- * claude --print를 사용하여 텍스트 배열을 벡터로 변환
+ * Transformers.js의 paraphrase-multilingual-MiniLM-L12-v2 모델 사용
+ * - 384차원, 다국어(한국어 포함), 오프라인 실행
+ * - 프리픽스 불필요 (paraphrase 모델 특성)
+ * - 모델 캐시: ~/.self-generation/models/
  */
-export function generateEmbeddings(texts) {
+let _pipeline = null;
+
+async function getEmbeddingPipeline() {
+  if (!_pipeline) {
+    const { pipeline, env } = await import('@xenova/transformers');
+    env.cacheDir = join(homedir(), '.self-generation', 'models');
+    _pipeline = await pipeline('feature-extraction',
+      'Xenova/paraphrase-multilingual-MiniLM-L12-v2');
+  }
+  return _pipeline;
+}
+
+export async function generateEmbeddings(texts) {
   if (!texts || texts.length === 0) return [];
 
-  const prompt = [
-    'Generate numerical vector embeddings for the following texts.',
-    'Output ONLY a JSON array of arrays, where each inner array has exactly 384 float values.',
-    'No other text or explanation.',
-    '',
-    ...texts.map((t, i) => `[${i}] ${t}`)
-  ].join('\n');
-
   try {
-    const result = execSync(
-      `claude --print "${prompt.replace(/"/g, '\\"')}"`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
-    );
-    return JSON.parse(result);
+    const extractor = await getEmbeddingPipeline();
+    const results = [];
+    for (const text of texts) {
+      const output = await extractor(text, { pooling: 'mean', normalize: true });
+      results.push(Array.from(output.data));
+    }
+    return results;
   } catch {
-    return [];
+    return []; // Return empty on model load error
   }
 }
 
@@ -1221,7 +1231,7 @@ try {
       // Synchronous embedding generation (already in SessionEnd hook)
       const { generateEmbeddings } = await import('../lib/db.mjs');
       const texts = newErrors.map(e => e.error_normalized);
-      const embeddings = generateEmbeddings(texts);
+      const embeddings = await generateEmbeddings(texts);
 
       // Update embeddings in error_kb table
       const stmt = db.prepare('UPDATE error_kb SET embedding = ? WHERE id = ?');
@@ -1387,9 +1397,10 @@ console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <�
 - `lib/skill-matcher.mjs` — 벡터 기반 스킬 매칭 추가 (`skill_embeddings` 테이블), `loadSynonymMap()` 제거
 - `lib/feedback-tracker.mjs` — JSONL에서 `feedback` 테이블로 전환
 
-**추가된 의존성** (2개):
+**추가된 의존성** (3개):
 - `better-sqlite3` — Node.js 네이티브 SQLite3 바인딩
 - `sqlite-vec` — SQLite 벡터 유사도 검색 확장
+- `@xenova/transformers` — 로컬 임베딩 생성 (paraphrase-multilingual-MiniLM-L12-v2, 384차원)
 
 #### 트레이드오프
 
@@ -1822,16 +1833,16 @@ import { getDb, vectorSearch, generateEmbeddings } from './db.mjs';
  * 에러 해결 이력 검색 (벡터 유사도 + 텍스트 폴백)
  * 정규화된 에러 메시지로 과거 해결 사례를 조회
  */
-export function searchErrorKB(normalizedError) {
+export async function searchErrorKB(normalizedError) {
   const db = getDb();
 
   // 1. 벡터 유사도 검색 (임베딩이 존재하는 경우)
   try {
     // Generate embedding from normalized error text first
-    const embeddings = generateEmbeddings([normalizedError]);
+    const embeddings = await generateEmbeddings([normalizedError]);
     if (embeddings && embeddings[0]) {
       const vectorResults = vectorSearch('error_kb', 'embedding', embeddings[0], 3);
-      if (vectorResults.length > 0 && vectorResults[0].distance < 0.3) {
+      if (vectorResults.length > 0 && vectorResults[0].distance < 0.76) {
         // 사용 카운트 증가
         db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
           .run(new Date().toISOString(), vectorResults[0].id);
@@ -2001,19 +2012,22 @@ export function loadSkills(projectPath) {
  *
  * v8 변경: loadSynonymMap() 제거 — 벡터 유사도 검색이 시노님 맵의
  * 의미 매칭을 네이티브하게 대체한다.
+ * v9 변경: claude --print → Transformers.js, 임계값 0.3 → 0.76
  */
-export function matchSkill(prompt, skills) {
+export async function matchSkill(prompt, skills) {
   // 1. 벡터 유사도 검색 (skill_embeddings 테이블, 임베딩이 존재하는 경우)
   try {
-    const db = getDb();
-    const results = vectorSearch('skill_embeddings', 'embedding', prompt, 1);
-    if (results.length > 0 && results[0].distance < 0.3) {
-      return {
-        name: results[0].name,
-        match: 'vector',
-        confidence: 1 - results[0].distance,
-        scope: skills.find(s => s.name === results[0].name)?.scope || 'global'
-      };
+    const embeddings = await generateEmbeddings([prompt]);
+    if (embeddings && embeddings[0]) {
+      const results = vectorSearch('skill_embeddings', 'embedding', embeddings[0], 1);
+      if (results.length > 0 && results[0].distance < 0.76) {
+        return {
+          name: results[0].name,
+          match: 'vector',
+          confidence: 1 - results[0].distance,
+          scope: skills.find(s => s.name === results[0].name)?.scope || 'global'
+        };
+      }
     }
   } catch { /* Vector search not available, fall through to keyword matching */ }
 
@@ -2508,8 +2522,9 @@ CREATE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
 ```
 
 > **임베딩 전략**: `embedding` 컬럼은 INSERT 시 NULL로 저장되고,
-> SessionEnd 배치에서 `claude --print`를 통해 비동기로 생성된다.
+> SessionEnd 배치에서 Transformers.js (`paraphrase-multilingual-MiniLM-L12-v2`)를 통해 생성된다.
 > 검색 시 임베딩이 없으면 텍스트 매칭으로 폴백한다.
+> 임계값: distance < 0.76 (고신뢰), 0.76~0.85 (저신뢰+키워드 검증), >= 0.85 (매칭 없음)
 
 ### 9.3 feedback 테이블 (제안 피드백)
 
@@ -2556,6 +2571,10 @@ CREATE TABLE IF NOT EXISTS skill_embeddings (
 );
 ```
 
+> **스킬 설명 이중 언어**: paraphrase-multilingual 모델은 한국어→영어 교차 의미 검색이 약하므로,
+> `description` 필드에 한국어와 영어를 모두 포함한다.
+> 예: "Docker 이미지 빌드 / Build Docker images and push to registry"
+
 ### 9.6 config.json
 
 ```json
@@ -2569,8 +2588,11 @@ CREATE TABLE IF NOT EXISTS skill_embeddings (
   "dbPath": "~/.self-generation/data/self-gen.db",
   "embedding": {
     "enabled": true,
+    "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    "dimensions": 384,
+    "threshold": 0.76,
     "batchSize": 50,
-    "dimensions": 384
+    "modelCacheDir": "~/.self-generation/models/"
   }
 }
 ```
@@ -2662,7 +2684,7 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
   1. prompts/analyze.md (AI 분석 프롬프트 템플릿)
   2. lib/ai-analyzer.mjs (claude --print 실행, analysis_cache 테이블 저장)
   3. bin/analyze.mjs (CLI 분석 도구)
-  4. hooks/session-summary.mjs 확장 (AI 분석 비동기 트리거 + 배치 임베딩 생성)
+  4. hooks/session-summary.mjs 확장 (AI 분석 비동기 트리거 + Transformers.js 배치 임베딩 생성)
   5. hooks/session-analyzer.mjs (SessionStart DB 캐시 주입)
   6. 테스트: 실제 데이터로 AI 분석 결과 검증
 
@@ -2739,7 +2761,7 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 세션 요약 (SessionEnd)       ─┤                    ─→  CLAUDE.md 지침
 피드백 이력 (feedback 테이블) ─┘                   ─→  훅 워크플로우
                               │
-                              └─→  배치 임베딩 생성 (error_kb, skill_embeddings)
+                              └─→  배치 임베딩 생성 — Transformers.js (error_kb, skill_embeddings)
 
 [실시간 어시스턴스 (세션 내)]
 에러 발생 ─────────────────→ 벡터 유사도 KB 검색 ──→  즉시 해결 제안

@@ -15,8 +15,9 @@ Self-Generation is a **prompt pattern analysis and auto-improvement system** for
 - **Runtime**: Node.js >= 18, ES Modules (`.mjs`)
 - **Storage**: SQLite (`better-sqlite3`) + `sqlite-vec` (vector extension), 단일 DB 파일 (`self-gen.db`)
 - **Analysis**: `claude --print` for semantic pattern analysis
+- **Embedding**: `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` (384차원, 오프라인)
 - **Hook system**: Claude Code Hooks API (registered in `~/.claude/settings.json`)
-- **Dependencies**: `better-sqlite3`, `sqlite-vec` — Node.js 내장 모듈 + 최소 외부 패키지
+- **Dependencies**: `better-sqlite3`, `sqlite-vec`, `@xenova/transformers` — 최소 외부 패키지 3개
 
 ## Architecture
 

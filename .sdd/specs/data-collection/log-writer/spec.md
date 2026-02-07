@@ -190,18 +190,18 @@ constitution_version: "2.0.0"
 
 ## Requirement: REQ-DC-008 — 임베딩 생성 (generateEmbeddings)
 
-시스템은 텍스트 배열을 입력받아 `claude --print`를 통해 벡터 임베딩을 배치 생성(SHALL)해야 한다.
+시스템은 텍스트 배열을 입력받아 Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델을 통해 벡터 임베딩을 배치 생성(SHALL)해야 한다. 이 함수는 비동기(async)로 동작한다.
 
 ### Scenario: 텍스트 배열 임베딩 생성
 
 - **GIVEN** 임베딩이 필요한 텍스트 배열 `['에러 메시지 A', '에러 메시지 B']`가 주어진 상태
-- **WHEN** `generateEmbeddings(texts)`를 호출하면
-- **THEN** `claude --print`를 사용하여 각 텍스트에 대해 float[384] 벡터 배열을 반환(SHALL)한다
+- **WHEN** `await generateEmbeddings(texts)`를 호출하면
+- **THEN** Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델을 사용하여 각 텍스트에 대해 float[384] 벡터 배열을 반환(SHALL)한다
 
 ### Scenario: 빈 배열 입력
 
 - **GIVEN** 빈 배열 `[]`이 입력된 상태
-- **WHEN** `generateEmbeddings([])`를 호출하면
+- **WHEN** `await generateEmbeddings([])`를 호출하면
 - **THEN** 빈 배열 `[]`을 즉시 반환(SHALL)한다
 
 ---

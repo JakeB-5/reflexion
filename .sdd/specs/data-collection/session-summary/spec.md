@@ -121,11 +121,11 @@ constitution_version: "2.0.0"
 
 - **GIVEN** 세션 요약이 정상적으로 기록되고, `error_kb` 테이블에 임베딩이 없는 새 엔트리가 존재하는 상태
 - **WHEN** 세션 요약 처리가 완료되면
-- **THEN** `generateEmbeddings()`를 호출하여 미생성 엔트리의 임베딩을 배치 생성(SHOULD)한다
+- **THEN** `await generateEmbeddings()`를 호출하여 미생성 엔트리의 임베딩을 배치 생성(SHOULD)한다 — Transformers.js 비동기 처리
 
 ### Scenario: 임베딩 생성 실패
 
-- **GIVEN** `generateEmbeddings()` 호출이 실패하는 상태
+- **GIVEN** `await generateEmbeddings()` 호출이 실패하는 상태
 - **WHEN** 배치 임베딩 생성 중 예외가 발생하면
 - **THEN** 예외를 포착하고 세션 요약은 정상 완료된 상태로 exit 0으로 종료(SHALL)한다
 

@@ -80,7 +80,7 @@ CREATE TABLE skill_embeddings (
 시스템은 사용자 프롬프트와 스킬 목록을 비교하여 가장 관련 있는 스킬을 반환해야 한다(SHALL).
 
 2단계 매칭 전략 (우선순위 순서):
-1. **벡터 유사도 검색 (primary)**: 프롬프트의 임베딩을 생성하고, `skill_embeddings` 테이블에서 cosine distance가 0.3 미만인 가장 유사한 스킬을 반환한다(SHALL).
+1. **벡터 유사도 검색 (primary)**: 프롬프트의 임베딩을 생성하고, `skill_embeddings` 테이블에서 cosine distance가 0.76 미만인 가장 유사한 스킬을 반환한다(SHALL).
    ```sql
    SELECT name, source_path, description,
           vec_distance_cosine(embedding, ?) AS distance
@@ -89,7 +89,7 @@ CREATE TABLE skill_embeddings (
    ORDER BY distance ASC
    LIMIT 1
    ```
-   - distance < 0.3이면 `{ skill, confidence: 1.0 - distance }` 반환 (SHALL)
+   - distance < 0.76이면 `{ skill, confidence: 1.0 - distance }` 반환 (SHALL)
 2. **키워드 패턴 매칭 (fallback)**: 벡터 검색 실패 또는 임베딩 미존재 시, 스킬 파일의 "감지된 패턴" 섹션에서 추출한 패턴 키워드 중 50% 이상이 프롬프트에 포함되면 해당 스킬을 반환한다(SHALL).
    - confidence: 매칭된 키워드 비율 (e.g., 3/4 = 0.75) (SHALL)
 3. 매칭되는 스킬이 없으면 `null`을 반환 (SHALL)
@@ -125,7 +125,7 @@ CREATE TABLE skill_embeddings (
 시스템은 변경된 스킬 파일의 임베딩을 재생성해야 한다(SHALL).
 
 1. `skill_embeddings` 테이블에서 `embedding IS NULL`이거나 `updated_at`이 소스 파일의 mtime보다 오래된 엔트리를 조회한다(SHALL)
-2. 해당 스킬의 description + keywords 텍스트로 `generateEmbeddings()`를 호출하여 벡터를 생성한다(SHALL)
+2. 해당 스킬의 description + keywords 텍스트로 `await generateEmbeddings()`를 호출하여 벡터를 생성한다(SHALL) — Transformers.js 비동기 처리
 3. 생성된 벡터를 `embedding` 컬럼에 업데이트한다(SHALL)
    ```sql
    UPDATE skill_embeddings SET embedding = ?, updated_at = ? WHERE name = ?
@@ -196,7 +196,7 @@ CREATE TABLE skill_embeddings (
 - 키워드 매칭(fallback)은 대소문자 무시(case-insensitive)로 수행 (SHALL)
 - 키워드는 3자 이상인 단어만 대상으로 한다 (SHALL)
 - 임베딩 차원: 384 (float 배열) (SHALL)
-- 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 유틸리티 사용 (SHALL)
+- 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 유틸리티 사용 (SHALL) — Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델 기반, async 함수
 
 ---
 

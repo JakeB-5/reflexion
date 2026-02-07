@@ -79,7 +79,7 @@ CREATE TABLE error_kb (
 시스템은 에러 메시지로 KB를 검색하여 과거 해결 이력을 반환해야 한다(SHALL).
 
 3단계 검색 전략 (우선순위 순서):
-1. **벡터 유사도 검색 (primary)**: 쿼리 에러의 임베딩을 생성하고, `vec_distance_cosine(embedding, ?) < 0.3` 조건으로 의미적으로 유사한 엔트리를 검색한다 (SHALL). 임베딩이 있는 엔트리 중 가장 유사한 항목을 반환한다.
+1. **벡터 유사도 검색 (primary)**: 쿼리 에러의 임베딩을 생성하고, `vec_distance_cosine(embedding, ?) < 0.76` 조건으로 의미적으로 유사한 엔트리를 검색한다 (SHALL). 임베딩이 있는 엔트리 중 가장 유사한 항목을 반환한다.
    ```sql
    SELECT *, vec_distance_cosine(embedding, ?) AS distance
    FROM error_kb
@@ -250,7 +250,7 @@ VALUES (?, ?, ?, ?, ?, ?, 0, NULL)
 - `normalizeError()`는 이 모듈이 단일 소유자(Single Owner)이며, 다른 모듈은 이 모듈에서 import하여 사용 (SHALL)
 - DB 경로: `~/.self-generation/data/self-gen.db` (SHALL)
 - 임베딩 차원: 384 (float 배열) (SHALL)
-- 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 유틸리티 사용 (SHALL)
+- 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 유틸리티 사용 (SHALL) — Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델 기반, async 함수
 
 ---
 
@@ -268,8 +268,8 @@ sqlite-vec 벡터 유사도 검색을 도입하여 이러한 의미적 유사 �
 
 - **생성 시점**: 실시간 훅(2초 제한) 중에는 임베딩을 생성하지 않고, SessionEnd 배치에서 생성
 - **Fallback**: 임베딩이 아직 없는 엔트리는 기존 텍스트 매칭(정확 + 접두사)으로 검색 가능
-- **차원**: 384 (float 배열), `claude --print`를 통해 생성
-- **임계값**: cosine distance 0.3 미만을 유사 매치로 판정
+- **차원**: 384 (float 배열), Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델을 통해 생성
+- **임계값**: cosine distance 0.76 미만을 유사 매치로 판정
 
 ---
 
