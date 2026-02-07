@@ -1,0 +1,21 @@
+version: "1.0"
+domains:
+  data-collection:
+    description: "Phase 1: 데이터 수집 레이어"
+    specs:
+      - log-writer
+      - prompt-logger
+      - tool-logger
+      - error-logger
+      - session-summary
+  ai-analysis:
+    description: "Phase 2: AI 기반 패턴 분석 레이어"
+    specs:
+      - ai-analyzer
+      - analyze-cli
+      - session-start-hook
+  suggestion-engine:
+    description: "Phase 3+4: 제안 적용 엔진 + 피드백 루프"
+    specs:
+      - suggestion-cli
+      - feedback-tracker
