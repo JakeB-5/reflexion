@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { execSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 const CLI_PATH = join(process.cwd(), 'bin', 'analyze.mjs');
@@ -30,10 +30,9 @@ test('CLI script has shebang', () => {
 });
 
 test('CLI script is executable', () => {
-  const stats = execSync(`stat -f %A "${CLI_PATH}"`, { encoding: 'utf-8' }).trim();
-  // Check if user has execute permission (bit 6 set)
-  const mode = parseInt(stats);
-  const userExecute = (mode & 0o100) !== 0;
+  const stats = statSync(CLI_PATH);
+  // Check if user has execute permission (bit 0o100 set)
+  const userExecute = (stats.mode & 0o100) !== 0;
   assert.strictEqual(userExecute, true, 'CLI script should have user execute permission');
 });
 

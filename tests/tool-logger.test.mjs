@@ -41,7 +41,7 @@ describe('tool-logger hook', () => {
   async function runHook(stdinData) {
     return new Promise((resolve) => {
       const proc = spawn('node', ['hooks/tool-logger.mjs'], {
-        cwd: '/Users/sungwon/projects/self-generation',
+        cwd: process.cwd(),
         env: { ...process.env, HOME: TEST_HOME },
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -464,7 +464,7 @@ describe('tool-logger hook', () => {
   describe('REQ-DC-205: Non-blocking execution', () => {
     it('should exit 0 on invalid JSON stdin', async () => {
       const proc = spawn('node', ['hooks/tool-logger.mjs'], {
-        cwd: '/Users/sungwon/projects/self-generation',
+        cwd: process.cwd(),
         env: { ...process.env, HOME: TEST_HOME },
         stdio: ['pipe', 'pipe', 'pipe']
       });
