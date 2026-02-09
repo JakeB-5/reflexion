@@ -81,8 +81,8 @@ Reflexion은 Claude Code Hooks API를 통해 사용자의 프롬프트, 도구 �
 
 ```bash
 # 1. 저장소 클론
-git clone https://github.com/JakeB-5/self-generation.git
-cd self-generation
+git clone https://github.com/JakeB-5/reflexion.git
+cd reflexion
 
 # 2. 의존성 설치
 npm install

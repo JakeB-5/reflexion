@@ -76,11 +76,11 @@ Claude Code CLI must be installed (verify with `claude --version`).
 
 ```bash
 # Clone repository
-git clone https://github.com/JakeB-5/self-generation.git
-cd self-generation
+git clone https://github.com/JakeB-5/reflexion.git
+cd reflexion
 
 # (Or if already cloned)
-cd /path/to/self-generation
+cd /path/to/reflexion
 ```
 
 ### Step 2: Install Dependencies
@@ -113,7 +113,7 @@ node bin/install.mjs
 # 📦 Dependencies installed
 # ⚙️  config.json initialized
 # 🔗 Hooks registered in settings.json
-# ✅ self-generation installation complete.
+# ✅ reflexion installation complete.
 ```
 
 #### Created Directory Structure
@@ -507,14 +507,14 @@ sqlite> .quit
 
 ```bash
 # Remove hook registration (from settings.json only)
-node ~/self-generation/bin/install.mjs --uninstall
+node ~/reflexion/bin/install.mjs --uninstall
 
 # Output:
-# ✅ self-generation hooks removed from settings.json.
+# ✅ reflexion hooks removed from settings.json.
 #    To delete data: rm -rf ~/.reflexion
 
 # Verify
-grep -c "self-generation" ~/.claude/settings.json  # 0 or no lines
+grep -c "reflexion" ~/.claude/settings.json  # 0 or no lines
 ```
 
 ### Complete Removal (Including Data)
@@ -524,7 +524,7 @@ grep -c "self-generation" ~/.claude/settings.json  # 0 or no lines
 node ~/.reflexion/bin/install.mjs --uninstall --purge
 
 # Output:
-# ✅ self-generation hooks removed from settings.json.
+# ✅ reflexion hooks removed from settings.json.
 # 🗑️  Data directory and socket files deleted.
 
 # Verify
@@ -543,8 +543,8 @@ rm ~/.reflexion/data/reflexion.db*
 # Complete deletion
 rm -rf ~/.reflexion/
 
-# Manually remove self-generation hooks from settings.json
-# (Open ~/.claude/settings.json in editor → delete self-generation entries)
+# Manually remove reflexion hooks from settings.json
+# (Open ~/.claude/settings.json in editor → delete reflexion entries)
 ```
 
 ---
@@ -592,7 +592,7 @@ npm install
 
 ```bash
 # 1. Verify hooks registered in settings.json
-grep -l "self-generation" ~/.claude/settings.json
+grep -l "reflexion" ~/.claude/settings.json
 
 # 2. Check enabled setting
 jq '.enabled' ~/.reflexion/config.json  # Should be true
@@ -602,7 +602,7 @@ ls -la ~/.reflexion/hooks/
 
 # 4. Reinstall
 node ~/.reflexion/bin/install.mjs --uninstall
-node ~/self-generation/bin/install.mjs
+node ~/reflexion/bin/install.mjs
 
 # 5. Restart Claude Code (CRITICAL!)
 # Completely quit and restart Claude Code
@@ -631,14 +631,14 @@ node ~/.reflexion/bin/install.mjs
 
 # Or complete reinstall
 rm -rf ~/.reflexion/
-node ~/self-generation/bin/install.mjs
+node ~/reflexion/bin/install.mjs
 ```
 
 ### Embedding Daemon Issues
 
 #### Symptoms
 ```
-Error: connect ENOENT /tmp/self-gen-embed.sock
+Error: connect ENOENT /tmp/reflexion-embed.sock
 ```
 
 #### Cause
@@ -648,13 +648,13 @@ Embedding daemon not started. Usually occurs during first run when downloading O
 
 ```bash
 # Check socket file
-ls -la /tmp/self-gen-embed.sock
+ls -la /tmp/reflexion-embed.sock
 
 # Check daemon logs (if available)
 tail -20 ~/.reflexion/logs/daemon.log
 
 # Restart
-kill $(lsof -t /tmp/self-gen-embed.sock) 2>/dev/null
+kill $(lsof -t /tmp/reflexion-embed.sock) 2>/dev/null
 # Restart Claude Code
 
 # Wait for model download (internet required)

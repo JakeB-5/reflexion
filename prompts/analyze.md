@@ -1,4 +1,4 @@
-<!-- ~/.self-generation/prompts/analyze.md -->
+<!-- ~/.reflexion/prompts/analyze.md -->
 
 아래는 Claude Code 사용자의 최근 {{days}}일간 사용 로그이다.
 프로젝트: {{project}} (전역 분석 시 "all")

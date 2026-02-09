@@ -155,7 +155,7 @@ Step 7: Position-aware blending:
 
 | 항목 | 값 |
 |------|-----|
-| 프로젝트 | self-generation |
+| 프로젝트 | reflexion |
 | 문서 | 4개 (DESIGN.md, CLAUDE.md, RESULT.md, REFERENCE-HOOK-SYSTEM.md) |
 | 임베딩 | 67개 벡터 |
 | DB 크기 | 3.5 MB |
@@ -231,9 +231,9 @@ Step 7: Position-aware blending:
 
 ---
 
-## 10. self-generation 프로젝트와의 비교
+## 10. reflexion 프로젝트와의 비교
 
-| 항목 | qmd | self-generation (DESIGN.md) |
+| 항목 | qmd | reflexion (DESIGN.md) |
 |------|-----|---------------------------|
 | Embedding 모델 | embeddinggemma-300M (GGUF) | paraphrase-multilingual-MiniLM-L12-v2 |
 | Embedding 런타임 | node-llama-cpp | @xenova/transformers |

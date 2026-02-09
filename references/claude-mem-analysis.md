@@ -164,9 +164,9 @@ plugin/              # 빌드된 플러그인 (배포 대상)
 └── logs/            # 로그
 ```
 
-## self-generation 프로젝트와의 비교
+## reflexion 프로젝트와의 비교
 
-| 관점 | claude-mem | self-generation |
+| 관점 | claude-mem | reflexion |
 |------|-----------|-----------------|
 | **목적** | 세션 간 **메모리 보존** | 프롬프트 패턴 분석 → **자동 개선 제안** |
 | **데이터 수집** | 도구 사용 관찰 캡처 | 프롬프트, 도구, 에러 수집 |
@@ -175,7 +175,7 @@ plugin/              # 빌드된 플러그인 (배포 대상)
 | **저장** | SQLite + Chroma Vector | SQLite + sqlite-vec |
 | **임베딩** | Chroma (외부 서비스, uv/Python) | Transformers.js (오프라인, 로컬) |
 | **런타임** | Bun + Express | Node.js ES Modules |
-| **배포 방식** | Claude Code Plugin Marketplace | 독립 설치 (`~/.self-generation/`) |
+| **배포 방식** | Claude Code Plugin Marketplace | 독립 설치 (`~/.reflexion/`) |
 | **의존성** | 다수 (express, react, bun, uv 등) | 최소 3개 (better-sqlite3, sqlite-vec, transformers) |
 | **관계** | 상호 보완적 — "기억하기" | 상호 보완적 — "패턴 발견 & 개선" |
 

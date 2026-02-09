@@ -1,4 +1,4 @@
-# Self-Generation: Prompt Pattern Analysis & Auto-Improvement System
+# Reflexion: Prompt Pattern Analysis & Auto-Improvement System
 
 > 사용자의 프롬프트와 응답을 수집하고 패턴을 분석하여, 반복되는 작업을 커스텀 스킬, CLAUDE.md 지침, 훅 워크플로우로 자동 개선하는 독립 시스템
 >
@@ -133,11 +133,11 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │                                                                  │
 │  ┌─── 실시간 어시스턴스 (Phase 5) ───────────────────────────┐   │
 │  │                                                           │   │
-│  │  User Prompt ──→ [UserPromptSubmit] ──┬→ self-gen.db      │   │
+│  │  User Prompt ──→ [UserPromptSubmit] ──┬→ reflexion.db      │   │
 │  │                                       └→ 스킬 자동 감지    │   │
 │  │                                          (벡터 스킬 매칭)  │   │
 │  │                                                           │   │
-│  │  Tool Error  ──→ [PostToolUseFailure] ─┬→ self-gen.db     │   │
+│  │  Tool Error  ──→ [PostToolUseFailure] ─┬→ reflexion.db     │   │
 │  │                                        └→ 에러 KB 검색    │   │
 │  │                                           (벡터 유사도)    │   │
 │  │                                                           │   │
@@ -147,9 +147,9 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │                                                                  │
 │  ┌─── 배치 분석 (Phase 2) ───────────────────────────────────┐   │
 │  │                                                           │   │
-│  │  Tool Usage  ──→ [PostToolUse] ──→ self-gen.db             │   │
+│  │  Tool Usage  ──→ [PostToolUse] ──→ reflexion.db             │   │
 │  │                                                           │   │
-│  │  Session End ──→ [SessionEnd] ──┬→ self-gen.db            │   │
+│  │  Session End ──→ [SessionEnd] ──┬→ reflexion.db            │   │
 │  │                                 ├→ claude --print 분석    │   │
 │  │                                 │   (비동기 백그라운드)     │   │
 │  │                                 │        │                │   │
@@ -193,14 +193,14 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 
 ### 파일 시스템 구조
 
-모든 데이터와 스크립트는 `~/.self-generation/`에 전역으로 관리된다.
+모든 데이터와 스크립트는 `~/.reflexion/`에 전역으로 관리된다.
 프로젝트별 분리가 아닌 **하나의 DB에 모든 세션을 기록**하고, 각 이벤트에 `project` 필드를 포함하여 프로젝트별 필터링이 가능하다.
 
 ```
-~/.self-generation/                ← 전역 시스템 루트
+~/.reflexion/                ← 전역 시스템 루트
 ├── config.json                    ← 시스템 설정
 ├── data/
-│   └── self-gen.db                ← SQLite DB (WAL 모드, 모든 데이터 통합)
+│   └── reflexion.db                ← SQLite DB (WAL 모드, 모든 데이터 통합)
 │       ├── events                 ← 전역 이벤트 로그 (prompt, tool_use, tool_error, ...)
 │       ├── error_kb               ← 에러 해결 이력 + 벡터 임베딩
 │       ├── feedback               ← 제안 채택/거부 기록
@@ -245,7 +245,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 ```
 
 **설계 원칙: 전역 우선, 프로젝트 필터링**
-- 수집: 모든 프로젝트의 이벤트가 하나의 `self-gen.db` → `events` 테이블에 기록
+- 수집: 모든 프로젝트의 이벤트가 하나의 `reflexion.db` → `events` 테이블에 기록
 - 각 이벤트에 `project`, `project_path` 필드 포함 (인덱스 기반 빠른 필터링)
 - 분석: 전역 패턴 (크로스-프로젝트) + 프로젝트별 패턴 모두 감지
 - 제안: 범용 패턴 → `~/.claude/` 전역 적용, 프로젝트 특화 → `<project>/.claude/` 적용
@@ -266,7 +266,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/prompt-logger.mjs"
+            "command": "node $HOME/.reflexion/hooks/prompt-logger.mjs"
           }
         ]
       }
@@ -276,7 +276,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/tool-logger.mjs"
+            "command": "node $HOME/.reflexion/hooks/tool-logger.mjs"
           }
         ]
       }
@@ -286,7 +286,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/error-logger.mjs"
+            "command": "node $HOME/.reflexion/hooks/error-logger.mjs"
           }
         ]
       }
@@ -296,7 +296,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-summary.mjs"
+            "command": "node $HOME/.reflexion/hooks/session-summary.mjs"
           }
         ]
       }
@@ -306,7 +306,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-analyzer.mjs"
+            "command": "node $HOME/.reflexion/hooks/session-analyzer.mjs"
           }
         ]
       }
@@ -342,7 +342,7 @@ Claude Code 공식 문서 대조를 통해 설계에 사용된 모든 API 필드
 > 인덱스 기반 쿼리, WAL 모드 동시성, 벡터 유사도 검색을 지원한다.
 
 ```javascript
-// ~/.self-generation/lib/db.mjs
+// ~/.reflexion/lib/db.mjs
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { mkdirSync, existsSync } from 'fs';
@@ -351,9 +351,9 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
 
-const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
+const GLOBAL_DIR = join(process.env.HOME, '.reflexion');
 const DATA_DIR = join(GLOBAL_DIR, 'data');
-const DB_PATH = join(DATA_DIR, 'self-gen.db');
+const DB_PATH = join(DATA_DIR, 'reflexion.db');
 const RETENTION_DAYS = 90;
 
 let _db = null;
@@ -764,7 +764,7 @@ export function pruneOldEvents(retentionDays) {
 ### 4.3 프롬프트 수집 훅 (UserPromptSubmit)
 
 ```javascript
-// ~/.self-generation/hooks/prompt-logger.mjs
+// ~/.reflexion/hooks/prompt-logger.mjs
 import { insertEvent, getProjectName, getProjectPath, readStdin, stripPrivateTags, isEnabled } from '../lib/db.mjs';
 
 try {
@@ -802,7 +802,7 @@ try {
 ### 4.4 도구 사용 수집 훅 (PostToolUse)
 
 ```javascript
-// ~/.self-generation/hooks/tool-logger.mjs
+// ~/.reflexion/hooks/tool-logger.mjs
 import { insertEvent, queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { recordResolution } from '../lib/error-kb.mjs';
 
@@ -928,7 +928,7 @@ function extractToolMeta(tool, toolInput) {
 ### 4.5 에러 수집 훅 (PostToolUseFailure)
 
 ```javascript
-// ~/.self-generation/hooks/error-logger.mjs
+// ~/.reflexion/hooks/error-logger.mjs
 // 최종 구현은 8.3절의 v6 확장 버전(에러 KB 검색 포함)을 사용한다.
 // Phase 1에서도 v6 버전을 구현하라. 에러 KB 검색이 실패하면 자동으로 무시된다(try/catch).
 // → 8.3절 참조
@@ -943,7 +943,7 @@ function extractToolMeta(tool, toolInput) {
 > 5.4절의 최종 버전(임베딩 배치 포함)으로 완전 교체한다.**
 
 ```javascript
-// ~/.self-generation/hooks/session-summary.mjs (기본 버전, Phase 1용)
+// ~/.reflexion/hooks/session-summary.mjs (기본 버전, Phase 1용)
 import { insertEvent, queryEvents, getProjectName, getProjectPath, readStdin } from '../lib/db.mjs';
 
 try {
@@ -1005,7 +1005,7 @@ try {
 |------|------|------|----------|
 | **AI 분석** | SessionEnd 훅 (비동기) | `claude --print`로 수집 데이터 분석 → `analysis_cache` 테이블 저장 | 10-30초 (백그라운드) |
 | **캐시 주입** | SessionStart 훅 | `analysis_cache` 테이블 조회 → `additionalContext`로 주입 | <1ms (SQLite 인덱스) |
-| **수동 분석** | CLI 실행 (`node ~/.self-generation/bin/analyze.mjs`) | `claude --print` 대화형 분석 | 10-30초 |
+| **수동 분석** | CLI 실행 (`node ~/.reflexion/bin/analyze.mjs`) | `claude --print` 대화형 분석 | 10-30초 |
 
 **핵심 설계**: 비용이 드는 AI 분석은 SessionEnd에서 비동기로 실행하고,
 SessionStart에서는 DB 캐시만 읽어 주입하므로 세션 시작 지연이 없다.
@@ -1013,7 +1013,7 @@ SessionStart에서는 DB 캐시만 읽어 주입하므로 세션 시작 지연�
 ### 5.2 AI 분석 프롬프트 템플릿
 
 ```markdown
-<!-- ~/.self-generation/prompts/analyze.md -->
+<!-- ~/.reflexion/prompts/analyze.md -->
 
 아래는 Claude Code 사용자의 최근 {{days}}일간 사용 로그이다.
 프로젝트: {{project}} (전역 분석 시 "all")
@@ -1130,7 +1130,7 @@ JSON만 출력하라. 다른 텍스트는 포함하지 마라.
 ### 5.3 AI 분석 실행 모듈
 
 ```javascript
-// ~/.self-generation/lib/ai-analyzer.mjs
+// ~/.reflexion/lib/ai-analyzer.mjs
 import { execSync, spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
@@ -1139,7 +1139,7 @@ import { getDb, queryEvents } from './db.mjs';
 import { getFeedbackSummary } from './feedback-tracker.mjs';
 import { loadSkills } from './skill-matcher.mjs';
 
-const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
+const GLOBAL_DIR = join(process.env.HOME, '.reflexion');
 const PROMPT_TEMPLATE = join(GLOBAL_DIR, 'prompts', 'analyze.md');
 
 /**
@@ -1344,7 +1344,7 @@ function extractJSON(text) {
 세션 요약 기록 후, 비동기로 AI 분석을 실행한다.
 
 ```javascript
-// ~/.self-generation/hooks/session-summary.mjs
+// ~/.reflexion/hooks/session-summary.mjs
 import { insertEvent, queryEvents, getProjectName, getProjectPath, getDb, readStdin, generateEmbeddings, isEnabled, pruneOldEvents } from '../lib/db.mjs';
 import { runAnalysisAsync } from '../lib/ai-analyzer.mjs';
 import { join } from 'path';
@@ -1410,7 +1410,7 @@ try {
   // 에러 KB + 스킬 임베딩 갱신을 비동기 백그라운드에서 수행
   try {
     const { spawn } = await import('child_process');
-    const batchScript = join(process.env.HOME, '.self-generation', 'lib', 'batch-embeddings.mjs');
+    const batchScript = join(process.env.HOME, '.reflexion', 'lib', 'batch-embeddings.mjs');
     const child = spawn('node', [batchScript, getProjectPath(input.cwd)], {
       detached: true,
       stdio: 'ignore'
@@ -1429,7 +1429,7 @@ try {
 SessionEnd에서 detached로 실행되는 배치 임베딩 처리 스크립트. 에러 KB와 스킬 임베딩을 갱신한다.
 
 ```javascript
-// ~/.self-generation/lib/batch-embeddings.mjs
+// ~/.reflexion/lib/batch-embeddings.mjs
 import { getDb, generateEmbeddings } from './db.mjs';
 import { loadSkills, extractPatterns } from './skill-matcher.mjs';
 import { isServerRunning, startServer } from './embedding-client.mjs';
@@ -1501,7 +1501,7 @@ try {
 ### 5.5 SessionStart 훅 (캐시 주입)
 
 ```javascript
-// ~/.self-generation/hooks/session-analyzer.mjs
+// ~/.reflexion/hooks/session-analyzer.mjs
 import { readStdin, getProjectName, getProjectPath } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
@@ -1529,13 +1529,13 @@ try {
 }
 
 function formatSuggestionsForContext(suggestions) {
-  let msg = '[Self-Generation] AI 패턴 분석 결과:\n';
+  let msg = '[Reflexion] AI 패턴 분석 결과:\n';
   for (const s of suggestions.slice(0, 3)) {
     msg += `- [${s.type}] ${s.summary} [id: ${s.id}]\n`;
   }
   msg += '\n사용자에게 이 개선 제안을 알려주세요.';
-  msg += '\n사용자가 승인하면 `node ~/.self-generation/bin/apply.mjs <번호>` 로 적용하세요.';
-  msg += '\n사용자가 거부하면 `node ~/.self-generation/bin/dismiss.mjs <id>` 로 기록하세요.';
+  msg += '\n사용자가 승인하면 `node ~/.reflexion/bin/apply.mjs <번호>` 로 적용하세요.';
+  msg += '\n사용자가 거부하면 `node ~/.reflexion/bin/dismiss.mjs <id>` 로 기록하세요.';
   return msg;
 }
 ```
@@ -1543,8 +1543,8 @@ function formatSuggestionsForContext(suggestions) {
 ### 5.6 심층 분석 CLI
 
 ```javascript
-// ~/.self-generation/bin/analyze.mjs
-// 사용법: node ~/.self-generation/bin/analyze.mjs [--days 30] [--project my-app]
+// ~/.reflexion/bin/analyze.mjs
+// 사용법: node ~/.reflexion/bin/analyze.mjs [--days 30] [--project my-app]
 
 import { runAnalysis } from '../lib/ai-analyzer.mjs';
 
@@ -1553,7 +1553,7 @@ const days = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '30');
 const project = args.find((_, i, a) => a[i - 1] === '--project') || null;
 const projectPath = args.find((_, i, a) => a[i - 1] === '--project-path') || null;
 
-console.log(`\n=== Self-Generation AI 패턴 분석 (최근 ${days}일) ===\n`);
+console.log(`\n=== Reflexion AI 패턴 분석 (최근 ${days}일) ===\n`);
 
 const result = runAnalysis({ days, project, projectPath });
 
@@ -1607,7 +1607,7 @@ if (result.suggestions?.length > 0) {
 }
 
 console.log('---');
-console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <번호>');
+console.log('제안을 적용하려면: node ~/.reflexion/bin/apply.mjs <번호>');
 ```
 
 ### 5.7 정적 분석 대비 AI 분석 비교
@@ -1671,8 +1671,8 @@ console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <�
 ### 6.1 제안 적용 도구
 
 ```javascript
-// ~/.self-generation/bin/apply.mjs
-// 사용법: node ~/.self-generation/bin/apply.mjs <suggestion-number> [--global] [--project <name>]
+// ~/.reflexion/bin/apply.mjs
+// 사용법: node ~/.reflexion/bin/apply.mjs <suggestion-number> [--global] [--project <name>]
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'fs';
 import { join, basename } from 'path';
@@ -1688,14 +1688,14 @@ const projectIdx = args.indexOf('--project');
 const project = projectIdx !== -1 ? args[projectIdx + 1] : basename(process.cwd());
 
 if (isNaN(num)) {
-  console.error('사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]');
+  console.error('사용법: node ~/.reflexion/bin/apply.mjs <번호> [--global]');
   process.exit(1);
 }
 
 // AI 분석 캐시에서 제안 목록 조회
 const analysis = getCachedAnalysis(168, project); // v9: project-scoped cache lookup
 if (!analysis || !analysis.suggestions?.length) {
-  console.error('분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요.');
+  console.error('분석 결과가 없습니다. 먼저 node ~/.reflexion/bin/analyze.mjs 를 실행하세요.');
   process.exit(1);
 }
 
@@ -1718,7 +1718,7 @@ switch (suggestion.type) {
     break;
   case 'hook': {
     // P6: 반자동 훅 워크플로우 생성 (v7)
-    const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
+    const GLOBAL_DIR = join(process.env.HOME, '.reflexion');
     const hookDir = join(GLOBAL_DIR, 'hooks', 'auto');
     mkdirSync(hookDir, { recursive: true });
 
@@ -1748,7 +1748,7 @@ switch (suggestion.type) {
         writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
         console.log(`✅ settings.json에 등록 완료`);
       } else {
-        console.log(`💡 자동 등록: node ~/.self-generation/bin/apply.mjs ${suggestion.id} --apply`);
+        console.log(`💡 자동 등록: node ~/.reflexion/bin/apply.mjs ${suggestion.id} --apply`);
       }
     } else {
       console.log(`⚠️ 훅 코드 미생성 — 프롬프트 템플릿에 hookCode 필드를 요청하세요`);
@@ -1840,8 +1840,8 @@ function applyClaudeMd(suggestion) {
 ### 6.1.1 제안 거부 도구
 
 ```javascript
-// ~/.self-generation/bin/dismiss.mjs
-// 사용법: node ~/.self-generation/bin/dismiss.mjs <suggestion-id>
+// ~/.reflexion/bin/dismiss.mjs
+// 사용법: node ~/.reflexion/bin/dismiss.mjs <suggestion-id>
 
 import { recordFeedback } from '../lib/feedback-tracker.mjs';
 
@@ -1849,7 +1849,7 @@ const args = process.argv.slice(2);
 const suggestionId = args[0];
 
 if (!suggestionId) {
-  console.error('사용법: node ~/.self-generation/bin/dismiss.mjs <suggestion-id>');
+  console.error('사용법: node ~/.reflexion/bin/dismiss.mjs <suggestion-id>');
   process.exit(1);
 }
 
@@ -1864,7 +1864,7 @@ console.log('이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩
 ### 6.1.2 설치 스크립트
 
 ```javascript
-// ~/.self-generation/bin/install.mjs
+// ~/.reflexion/bin/install.mjs
 // 사용법: node install.mjs [--uninstall]
 // v9: 자동화된 설치/제거 스크립트
 
@@ -1874,7 +1874,7 @@ import { execSync } from 'child_process';
 import { homedir } from 'os';
 
 const HOME = homedir();
-const SELF_GEN_DIR = join(HOME, '.self-generation');
+const REFLEXION_DIR = join(HOME, '.reflexion');
 const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
 const isUninstall = process.argv.includes('--uninstall');
 
@@ -1897,7 +1897,7 @@ if (isUninstall) {
       for (const event of Object.keys(HOOK_EVENTS)) {
         if (settings.hooks[event]) {
           settings.hooks[event] = settings.hooks[event].filter(
-            group => !group.hooks?.some(h => h.command?.includes('.self-generation'))
+            group => !group.hooks?.some(h => h.command?.includes('.reflexion'))
           );
           if (settings.hooks[event].length === 0) delete settings.hooks[event];
         }
@@ -1905,21 +1905,21 @@ if (isUninstall) {
       writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
     }
   }
-  console.log('✅ self-generation 훅이 settings.json에서 제거되었습니다.');
-  console.log(`   데이터 삭제: rm -rf ${SELF_GEN_DIR}`);
+  console.log('✅ reflexion 훅이 settings.json에서 제거되었습니다.');
+  console.log(`   데이터 삭제: rm -rf ${REFLEXION_DIR}`);
   process.exit(0);
 }
 
 // 1. Create directory structure
 for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
-  mkdirSync(join(SELF_GEN_DIR, dir), { recursive: true });
+  mkdirSync(join(REFLEXION_DIR, dir), { recursive: true });
 }
 console.log('📁 디렉토리 구조 생성 완료');
 
 // 2. Initialize package.json and install dependencies
-if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
-  writeFileSync(join(SELF_GEN_DIR, 'package.json'), JSON.stringify({
-    name: 'self-generation',
+if (!existsSync(join(REFLEXION_DIR, 'package.json'))) {
+  writeFileSync(join(REFLEXION_DIR, 'package.json'), JSON.stringify({
+    name: 'reflexion',
     version: '0.1.0',
     type: 'module',
     private: true,
@@ -1933,7 +1933,7 @@ if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
 console.log('📦 package.json 생성 완료');
 
 try {
-  execSync('npm install --production', { cwd: SELF_GEN_DIR, stdio: 'inherit' });
+  execSync('npm install --production', { cwd: REFLEXION_DIR, stdio: 'inherit' });
   console.log('📦 의존성 설치 완료');
 } catch (e) {
   console.error('❌ 의존성 설치 실패:', e.message);
@@ -1941,7 +1941,7 @@ try {
 }
 
 // 3. Initialize config.json
-const configPath = join(SELF_GEN_DIR, 'config.json');
+const configPath = join(REFLEXION_DIR, 'config.json');
 if (!existsSync(configPath)) {
   writeFileSync(configPath, JSON.stringify({
     enabled: true,
@@ -1965,7 +1965,7 @@ for (const [event, config] of Object.entries(HOOK_EVENTS)) {
   const timeout = config.timeout;
   const hookEntry = {
     type: 'command',
-    command: `node ${join(SELF_GEN_DIR, 'hooks', script)}`,
+    command: `node ${join(REFLEXION_DIR, 'hooks', script)}`,
     timeout
   };
   const group = { hooks: [hookEntry] };
@@ -1974,7 +1974,7 @@ for (const [event, config] of Object.entries(HOOK_EVENTS)) {
   // Avoid duplicate registration
   if (!settings.hooks[event]) settings.hooks[event] = [];
   const alreadyRegistered = settings.hooks[event].some(
-    g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+    g => g.hooks?.some(h => h.command?.includes('.reflexion'))
   );
   if (!alreadyRegistered) settings.hooks[event].push(group);
 }
@@ -1982,7 +1982,7 @@ for (const [event, config] of Object.entries(HOOK_EVENTS)) {
 writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 console.log('🔗 settings.json에 훅 등록 완료');
 
-console.log('\n✅ self-generation 설치 완료!');
+console.log('\n✅ reflexion 설치 완료!');
 console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니다.');
 ```
 
@@ -2007,8 +2007,8 @@ console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니
   │    │        Claude가 사용자에게 자연어로 안내:
   │    │        "AI 분석 결과, 'TS 프로젝트 초기화' 작업을
   │    │         5번 반복하셨습니다. /ts-init 스킬을 만들어드릴까요?"
-  │    │         ├─ 승인 → node ~/.self-generation/bin/apply.mjs <번호>
-  │    │         └─ 거부 → node ~/.self-generation/bin/dismiss.mjs <id>
+  │    │         ├─ 승인 → node ~/.reflexion/bin/apply.mjs <번호>
+  │    │         └─ 거부 → node ~/.reflexion/bin/dismiss.mjs <id>
   │    │
   │    └─ No → 조용히 패스
   │
@@ -2016,10 +2016,10 @@ console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니
 
 [CLI 수동 분석]
   │
-  ├─ node ~/.self-generation/bin/analyze.mjs [--days 30]
+  ├─ node ~/.reflexion/bin/analyze.mjs [--days 30]
   │   → claude --print로 심층 분석 → 리포트 + 제안 목록
   │
-  └─ node ~/.self-generation/bin/apply.mjs <번호> [--global]
+  └─ node ~/.reflexion/bin/apply.mjs <번호> [--global]
       → 선택한 제안 적용
 ```
 
@@ -2035,7 +2035,7 @@ console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니
 ### 7.1 채택 추적
 
 ```javascript
-// ~/.self-generation/lib/feedback-tracker.mjs
+// ~/.reflexion/lib/feedback-tracker.mjs
 import { getDb, queryEvents } from './db.mjs';
 import { loadSkills } from './skill-matcher.mjs';
 
@@ -2215,7 +2215,7 @@ AI 분석 실행 시 `getFeedbackSummary()`의 결과를 프롬프트에 추가�
 에러 발생 즉시 과거 동일 에러의 해결 이력을 벡터 유사도 + 텍스트 폴백으로 검색하여 Claude에게 주입한다.
 
 ```javascript
-// ~/.self-generation/lib/error-kb.mjs
+// ~/.reflexion/lib/error-kb.mjs
 import { getDb, vectorSearch, generateEmbeddings } from './db.mjs';
 
 /**
@@ -2323,7 +2323,7 @@ export function recordResolution(normalizedError, resolution) {
 **에러 로거 훅 확장** (error-logger.mjs에 KB 검색 추가):
 
 ```javascript
-// ~/.self-generation/hooks/error-logger.mjs (v6 확장)
+// ~/.reflexion/hooks/error-logger.mjs (v6 확장)
 import { insertEvent, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { normalizeError, searchErrorKB } from '../lib/error-kb.mjs';
 
@@ -2365,7 +2365,7 @@ try {
               ? `${res.resolvedBy}: ${res.toolSequence.join(' → ')}`
               : res.resolvedBy || kbMatch.resolution;
           } catch {}
-          return `[Self-Generation 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
+          return `[Reflexion 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
             `- 에러: ${kbMatch.error_normalized}\n` +
             `- 해결 방법: ${resText}\n` +
             `이 정보를 참고하여 해결을 시도하세요.`;
@@ -2388,18 +2388,18 @@ Transformers.js 모델을 메모리에 상주시키는 백그라운드 서버. �
 모델 로딩(1~4초)을 매번 반복하는 대신 상주 프로세스의 소켓 인터페이스를 통해 ~5ms로 임베딩을 생성한다.
 
 ```javascript
-// ~/.self-generation/lib/embedding-server.mjs
+// ~/.reflexion/lib/embedding-server.mjs
 import { createServer } from 'net';
 import { pipeline, env } from '@xenova/transformers';
 import { join } from 'path';
 import { homedir } from 'os';
 import { unlinkSync, existsSync } from 'fs';
 
-const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const SOCKET_PATH = '/tmp/reflexion-embed.sock';
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Model initialization
-env.cacheDir = join(homedir(), '.self-generation', 'models');
+env.cacheDir = join(homedir(), '.reflexion', 'models');
 let extractor = null;
 let idleTimer = null;
 
@@ -2494,10 +2494,10 @@ process.on('SIGINT', () => { server.close(); process.exit(0); });
 훅 프로세스에서 임베딩 데몬과 통신하는 경량 클라이언트. 10초 타임아웃 내 응답을 보장한다 (콜드 스타트 시 모델 로딩 대기 포함).
 
 ```javascript
-// ~/.self-generation/lib/embedding-client.mjs
+// ~/.reflexion/lib/embedding-client.mjs
 import { createConnection } from 'net';
 
-const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const SOCKET_PATH = '/tmp/reflexion-embed.sock';
 const TIMEOUT_MS = 10000;
 
 /**
@@ -2575,7 +2575,7 @@ export async function startServer() {
   const { spawn } = await import('child_process');
   const { join } = await import('path');
   const { homedir } = await import('os');
-  const serverPath = join(homedir(), '.self-generation', 'lib', 'embedding-server.mjs');
+  const serverPath = join(homedir(), '.reflexion', 'lib', 'embedding-server.mjs');
   const child = spawn('node', [serverPath], {
     detached: true,
     stdio: 'ignore'
@@ -2589,7 +2589,7 @@ export async function startServer() {
 사용자 프롬프트 입력 시, 이미 생성된 커스텀 스킬 중 매칭되는 것이 있으면 안내한다.
 
 ```javascript
-// ~/.self-generation/lib/skill-matcher.mjs
+// ~/.reflexion/lib/skill-matcher.mjs
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getDb, vectorSearch, generateEmbeddings } from './db.mjs';
@@ -2697,7 +2697,7 @@ export function extractPatterns(content) {
 **프롬프트 로거 훅 확장** (prompt-logger.mjs에 스킬 감지 추가):
 
 ```javascript
-// ~/.self-generation/hooks/prompt-logger.mjs (v6 확장)
+// ~/.reflexion/hooks/prompt-logger.mjs (v6 확장)
 import { insertEvent, getProjectName, getProjectPath, readStdin, loadConfig, stripPrivateTags } from '../lib/db.mjs';
 import { loadSkills, matchSkill } from '../lib/skill-matcher.mjs';
 
@@ -2737,7 +2737,7 @@ try {
       const output = {
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
-          additionalContext: `[Self-Generation] 이 작업과 관련된 커스텀 스킬이 있습니다: ` +
+          additionalContext: `[Reflexion] 이 작업과 관련된 커스텀 스킬이 있습니다: ` +
             `\`/${matched.name}\` (${matched.scope === 'global' ? '전역' : '프로젝트'} 스킬)\n` +
             `사용자에게 이 스킬 사용을 제안해주세요.`
         }
@@ -2773,7 +2773,7 @@ try {
 ### 8.3 서브에이전트 성능 추적
 
 ```javascript
-// ~/.self-generation/hooks/subagent-tracker.mjs
+// ~/.reflexion/hooks/subagent-tracker.mjs
 import { insertEvent, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 
 try {
@@ -2808,7 +2808,7 @@ SessionStart에서 이전 세션의 핵심 정보를 주입하여 세션 연속�
 **session-analyzer.mjs 확장** (캐시 주입 + 이전 세션 컨텍스트):
 
 ```javascript
-// ~/.self-generation/hooks/session-analyzer.mjs (v6 확장)
+// ~/.reflexion/hooks/session-analyzer.mjs (v6 확장)
 import { queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
@@ -2826,13 +2826,13 @@ try {
   // 1. 캐시된 AI 분석 결과 주입 (v9: project 필터 추가)
   const analysis = getCachedAnalysis(24, project);
   if (analysis && analysis.suggestions?.length > 0) {
-    let msg = '[Self-Generation] AI 패턴 분석 결과:\n';
+    let msg = '[Reflexion] AI 패턴 분석 결과:\n';
     for (const s of analysis.suggestions.slice(0, 3)) {
       msg += `- [${s.type}] ${s.summary} [id: ${s.id}]\n`;
     }
     msg += '\n사용자에게 이 개선 제안을 알려주세요.';
-    msg += '\n사용자가 승인하면 `node ~/.self-generation/bin/apply.mjs <번호>` 로 적용하세요.';
-    msg += '\n사용자가 거부하면 `node ~/.self-generation/bin/dismiss.mjs <id>` 로 기록하세요.';
+    msg += '\n사용자가 승인하면 `node ~/.reflexion/bin/apply.mjs <번호>` 로 적용하세요.';
+    msg += '\n사용자가 거부하면 `node ~/.reflexion/bin/dismiss.mjs <id>` 로 기록하세요.';
     contextParts.push(msg);
   }
 
@@ -2841,7 +2841,7 @@ try {
 
   if (recentSummaries.length > 0) {
     const prev = recentSummaries[0];
-    const parts = [`[Self-Generation] 이전 세션 컨텍스트 (${prev.ts}):`];
+    const parts = [`[Reflexion] 이전 세션 컨텍스트 (${prev.ts}):`];
     parts.push(`- 프롬프트 ${prev.promptCount}개, 도구 ${Object.values(prev.toolCounts).reduce((a, b) => a + b, 0)}회 사용`);
 
     // P2: 태스크레벨 세션 컨텍스트 (v7)
@@ -2897,7 +2897,7 @@ try {
 도구 실행 전에 과거 학습 데이터를 기반으로 사전 경고/가이드를 주입한다.
 
 ```javascript
-// ~/.self-generation/hooks/pre-tool-guide.mjs
+// ~/.reflexion/hooks/pre-tool-guide.mjs
 import { queryEvents, getDb, readStdin, isEnabled } from '../lib/db.mjs';
 
 try {
@@ -2980,7 +2980,7 @@ try {
 서브에이전트 시작 시 프로젝트별 학습 데이터를 주입하여 서브에이전트도 시스템의 학습 결과를 활용하도록 한다.
 
 ```javascript
-// ~/.self-generation/hooks/subagent-context.mjs
+// ~/.reflexion/hooks/subagent-context.mjs
 import { queryEvents, getDb, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
@@ -3060,7 +3060,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs"
+            "command": "node $HOME/.reflexion/hooks/pre-tool-guide.mjs"
           }
         ]
       }
@@ -3070,7 +3070,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs"
+            "command": "node $HOME/.reflexion/hooks/subagent-context.mjs"
           }
         ]
       }
@@ -3080,7 +3080,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs"
+            "command": "node $HOME/.reflexion/hooks/subagent-tracker.mjs"
           }
         ]
       }
@@ -3101,7 +3101,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/prompt-logger.mjs",
+            "command": "node $HOME/.reflexion/hooks/prompt-logger.mjs",
             "timeout": 5
           }
         ]
@@ -3112,7 +3112,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/tool-logger.mjs",
+            "command": "node $HOME/.reflexion/hooks/tool-logger.mjs",
             "timeout": 5
           }
         ]
@@ -3123,7 +3123,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/error-logger.mjs",
+            "command": "node $HOME/.reflexion/hooks/error-logger.mjs",
             "timeout": 5
           }
         ]
@@ -3135,7 +3135,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs",
+            "command": "node $HOME/.reflexion/hooks/pre-tool-guide.mjs",
             "timeout": 5
           }
         ]
@@ -3146,7 +3146,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs",
+            "command": "node $HOME/.reflexion/hooks/subagent-context.mjs",
             "timeout": 5
           }
         ]
@@ -3157,7 +3157,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs",
+            "command": "node $HOME/.reflexion/hooks/subagent-tracker.mjs",
             "timeout": 5
           }
         ]
@@ -3168,7 +3168,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-summary.mjs",
+            "command": "node $HOME/.reflexion/hooks/session-summary.mjs",
             "timeout": 10
           }
         ]
@@ -3179,7 +3179,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-analyzer.mjs",
+            "command": "node $HOME/.reflexion/hooks/session-analyzer.mjs",
             "timeout": 10
           }
         ]
@@ -3197,7 +3197,7 @@ try {
 ## 9. 데이터 스키마
 
 > **설계 변경 (v8)**: JSONL 파일 기반 스키마를 SQLite 테이블 스키마로 전환.
-> 모든 데이터는 `~/.self-generation/data/self-gen.db` 단일 파일에 통합 저장된다.
+> 모든 데이터는 `~/.reflexion/data/reflexion.db` 단일 파일에 통합 저장된다.
 
 ### 9.1 events 테이블 (이벤트 로그)
 
@@ -3414,16 +3414,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
   "analysisOnSessionEnd": true,
   "analysisDays": 7,
   "analysisCacheMaxAgeHours": 24,
-  "dbPath": "~/.self-generation/data/self-gen.db",
+  "dbPath": "~/.reflexion/data/reflexion.db",
   "embedding": {
     "enabled": true,
     "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
     "dimensions": 384,
     "threshold": 0.76,
     "batchSize": 50,
-    "modelCacheDir": "~/.self-generation/models/",
+    "modelCacheDir": "~/.reflexion/models/",
     "server": {
-      "socketPath": "/tmp/self-gen-embed.sock",
+      "socketPath": "/tmp/reflexion-embed.sock",
       "idleTimeoutMinutes": 30,
       "clientTimeoutMs": 10000
     }
@@ -3446,10 +3446,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
 
 | 원칙 | 구현 |
 |------|------|
-| 로컬 저장 | 모든 수집 데이터는 `~/.self-generation/data/self-gen.db` (SQLite)에만 저장 |
+| 로컬 저장 | 모든 수집 데이터는 `~/.reflexion/data/reflexion.db` (SQLite)에만 저장 |
 | 최소 네트워크 | 수집·검색은 완전 로컬. AI 분석(`claude --print`)만 Anthropic API를 통해 요약 데이터 전송. `collectPromptText: false` 시 프롬프트 원문 미포함 |
 | 최소 수집 | 도구 입력의 전체가 아닌 메타 정보만 기록 |
-| 삭제 가능 | `rm ~/.self-generation/data/self-gen.db*`로 완전 삭제 (WAL/SHM 포함) |
+| 삭제 가능 | `rm ~/.reflexion/data/reflexion.db*`로 완전 삭제 (WAL/SHM 포함) |
 
 ### 10.2 보안 고려사항
 
@@ -3488,8 +3488,8 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 
 ### 10.4 데이터 위치
 
-전역 `~/.self-generation/`은 홈 디렉토리에 있으므로 프로젝트 git에 포함되지 않는다.
-별도의 gitignore 설정이 불필요하다. SQLite DB 파일(`self-gen.db`)과 WAL/SHM 파일이 `data/` 디렉토리에 저장된다.
+전역 `~/.reflexion/`은 홈 디렉토리에 있으므로 프로젝트 git에 포함되지 않는다.
+별도의 gitignore 설정이 불필요하다. SQLite DB 파일(`reflexion.db`)과 WAL/SHM 파일이 `data/` 디렉토리에 저장된다.
 
 ### 10.5 비활성화 및 제거 (v9)
 
@@ -3497,7 +3497,7 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 ```bash
 # config.json에서 enabled: false 설정
 node -e "
-const f = require('os').homedir() + '/.self-generation/config.json';
+const f = require('os').homedir() + '/.reflexion/config.json';
 const c = JSON.parse(require('fs').readFileSync(f,'utf8'));
 c.enabled = false;
 require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
@@ -3508,16 +3508,16 @@ require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
 **완전 제거**:
 ```bash
 # 1. settings.json에서 훅 제거 (install.mjs --uninstall 사용)
-node ~/.self-generation/bin/install.mjs --uninstall
+node ~/.reflexion/bin/install.mjs --uninstall
 
 # 2. 임베딩 데몬 즉시 종료
-rm -f /tmp/self-gen-embed.sock
+rm -f /tmp/reflexion-embed.sock
 
 # 3. 모든 데이터 및 코드 삭제
-rm -rf ~/.self-generation/
+rm -rf ~/.reflexion/
 ```
 
-> `--uninstall`은 `settings.json`에서 `.self-generation` 경로를 포함하는 훅만 선택적으로 제거하고, 다른 훅은 보존한다.
+> `--uninstall`은 `settings.json`에서 `.reflexion` 경로를 포함하는 훅만 선택적으로 제거하고, 다른 훅은 보존한다.
 
 ---
 
@@ -3526,7 +3526,7 @@ rm -rf ~/.self-generation/
 ### Phase 1: 데이터 수집
 
 ```
-목표: self-gen.db events 테이블에 이벤트가 쌓이는 것까지
+목표: reflexion.db events 테이블에 이벤트가 쌓이는 것까지
 
 작업:
   0. bin/install.mjs 실행 (디렉토리, package.json, 의존성, settings.json 자동 설정)
@@ -3539,7 +3539,7 @@ rm -rf ~/.self-generation/
   6. 테스트: 실제 세션에서 DB 수집 확인
 
 산출물:
-  - ~/.self-generation/data/self-gen.db (이벤트 수집 시작)
+  - ~/.reflexion/data/reflexion.db (이벤트 수집 시작)
 ```
 
 ### Phase 2: AI 기반 패턴 분석
@@ -3746,7 +3746,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 | 패턴 | 출처 | 미채택 사유 |
 |------|------|-----------|
 | Worker 위임 패턴 | claude-mem | 현재 훅이 충분히 가벼움 (~10ms), 불필요한 인프라 추가 |
-| Chroma Vector DB | claude-mem | sqlite-vec가 self-generation 규모에 충분, Python 의존성 회피 |
+| Chroma Vector DB | claude-mem | sqlite-vec가 reflexion 규모에 충분, Python 의존성 회피 |
 | 리랭킹/쿼리 확장 | QMD | 에러 KB/스킬 매칭에는 과잉 설계, GGUF 모델 2GB 추가 부담 |
 | 종속성 도입 (claude-mem) | claude-mem | 데이터 형태 불일치 (observation vs event), AGPL 오염 위험 |
 | 종속성 도입 (QMD) | QMD | 문서 검색 엔진으로 이벤트 데이터 검색에 부적합 |

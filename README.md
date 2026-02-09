@@ -81,8 +81,8 @@ Reflexion uses the Claude Code Hooks API to collect user prompts, tool usage, an
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/JakeB-5/self-generation.git
-cd self-generation
+git clone https://github.com/JakeB-5/reflexion.git
+cd reflexion
 
 # 2. Install dependencies
 npm install

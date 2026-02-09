@@ -1,13 +1,13 @@
-# Self-Generation vs Claude-Mem vs QMD: 3개 시스템 비교 연구
+# Reflexion vs Claude-Mem vs QMD: 3개 시스템 비교 연구
 
 > 작성일: 2026-02-08
-> 목적: self-generation 설계에 참고할 수 있는 패턴, 도입 가능성, 구조 단순화 방안 도출
+> 목적: reflexion 설계에 참고할 수 있는 패턴, 도입 가능성, 구조 단순화 방안 도출
 
 ---
 
 ## 1. 프로젝트 정체성 비교
 
-| 항목 | self-generation | claude-mem | QMD |
+| 항목 | reflexion | claude-mem | QMD |
 |------|----------------|-----------|-----|
 | **한줄 요약** | 프롬프트 패턴 분석 → 자동 개선 제안 | 세션 간 메모리 보존 | 로컬 온디바이스 하이브리드 검색 엔진 |
 | **핵심 질문** | "사용자가 뭘 반복하나?" | "이전 세션에서 뭘 했나?" | "이 문서에서 뭘 찾나?" |
@@ -15,7 +15,7 @@
 | **출력** | 스킬, CLAUDE.md 지침, 훅 워크플로우 | 이전 세션 컨텍스트 주입 | 검색 결과 (ranked documents) |
 | **작동 시점** | 세션 간(배치) + 세션 내(실시간) | 세션 시작/종료/도중 | 온디맨드 (CLI/MCP 호출 시) |
 | **AI 의존성** | `claude --print` (배치 분석) | Claude Agent SDK (요약/압축) | 로컬 GGUF 3개 (임베딩, 확장, 리랭킹) |
-| **배포 방식** | 독립 설치 (`~/.self-generation/`) | Claude Code Plugin Marketplace | 독립 CLI + MCP Server |
+| **배포 방식** | 독립 설치 (`~/.reflexion/`) | Claude Code Plugin Marketplace | 독립 CLI + MCP Server |
 
 ### 관계 다이어그램
 
@@ -28,7 +28,7 @@
               ┌──────────────┼──────────────┐
               ▼              ▼              ▼
      ┌────────────┐  ┌─────────────┐  ┌─────────┐
-     │ self-gen   │  │ claude-mem  │  │   QMD   │
+     │ reflexion  │  │ claude-mem  │  │   QMD   │
      │            │  │             │  │         │
      │ "왜 반복   │  │ "뭘 했었지" │  │ "어디에 │
      │  하는가?"  │  │  기억하기   │  │  있지?" │
@@ -45,7 +45,7 @@
 
 ### 2.1 수집 대상
 
-| 수집 항목 | self-generation | claude-mem | QMD |
+| 수집 항목 | reflexion | claude-mem | QMD |
 |----------|----------------|-----------|-----|
 | 사용자 프롬프트 | O (전문) | X (미수집) | X (해당없음) |
 | 도구 사용 | O (도구명+메타) | O (**관찰** 단위) | X |
@@ -57,7 +57,7 @@
 
 ### 2.2 수집 메커니즘
 
-| 메커니즘 | self-generation | claude-mem | QMD |
+| 메커니즘 | reflexion | claude-mem | QMD |
 |---------|----------------|-----------|-----|
 | **트리거** | Hook 스크립트 (직접 실행) | Hook → Worker HTTP 위임 | CLI 명령어 (수동 인덱싱) |
 | **처리 방식** | 훅 내 동기 DB write | 비동기 Worker 큐 | 배치 인덱싱 |
@@ -66,7 +66,7 @@
 
 ### 2.3 핵심 차이
 
-**self-generation**은 "**무엇을 왜 했는가**"(프롬프트 의도 + 도구 패턴)를 수집하고,
+**reflexion**은 "**무엇을 왜 했는가**"(프롬프트 의도 + 도구 패턴)를 수집하고,
 **claude-mem**은 "**무엇이 일어났는가**"(도구 사용 관찰의 결과)를 수집하며,
 **QMD**는 수집이 아닌 "**이미 있는 문서를 인덱싱**"한다.
 
@@ -76,18 +76,18 @@
 
 ### 3.1 저장소 아키텍처
 
-| 항목 | self-generation | claude-mem | QMD |
+| 항목 | reflexion | claude-mem | QMD |
 |------|----------------|-----------|-----|
 | **메인 DB** | SQLite (`better-sqlite3`) | SQLite (Bun 내장) | SQLite (`better-sqlite3`) |
 | **벡터 저장** | `sqlite-vec` (float[384]) | Chroma Vector DB (별도) | `sqlite-vec` (동적 차원) |
 | **FTS** | 미사용 (벡터 검색 의존) | FTS5 | FTS5 + BM25 커스텀 가중치 |
 | **DB 모드** | WAL | 미명시 (SQLite 기본) | WAL |
-| **DB 파일** | 단일 (`self-gen.db`) | 단일 (`claude-mem.db`) + Chroma 별도 | 단일 (컬렉션별) |
+| **DB 파일** | 단일 (`reflexion.db`) | 단일 (`claude-mem.db`) + Chroma 별도 | 단일 (컬렉션별) |
 | **동시성** | `busy_timeout = 5000` | Worker 직렬화 | WAL |
 
 ### 3.2 테이블 구조 비교
 
-**self-generation (5 regular + 2 vec0 virtual)**
+**reflexion (5 regular + 2 vec0 virtual)**
 ```
 events              ← 전역 이벤트 로그 (prompt, tool_use, tool_error, ...)
 error_kb            ← 에러 해결 이력 + 정규화
@@ -121,7 +121,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ### 3.3 벡터 검색 비교
 
-| 항목 | self-generation | claude-mem | QMD |
+| 항목 | reflexion | claude-mem | QMD |
 |------|----------------|-----------|-----|
 | **임베딩 모델** | MiniLM-L12-v2 (ONNX) | Chroma 내장 | embeddinggemma-300M (GGUF) |
 | **차원** | 384 | Chroma 의존 | 동적 |
@@ -142,26 +142,26 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 | 공통 패턴 | 세부 |
 |----------|------|
-| **Claude Code Hooks 활용** | self-generation과 claude-mem 모두 Hooks API로 데이터 수집 |
+| **Claude Code Hooks 활용** | reflexion과 claude-mem 모두 Hooks API로 데이터 수집 |
 | **SQLite 기반 저장** | 3개 프로젝트 모두 SQLite를 메인 DB로 사용 |
-| **sqlite-vec 활용** | self-generation과 QMD 모두 sqlite-vec으로 벡터 검색 |
+| **sqlite-vec 활용** | reflexion과 QMD 모두 sqlite-vec으로 벡터 검색 |
 | **WAL 모드** | 3개 프로젝트 모두 동시성을 위해 WAL 사용 |
-| **비차단 설계** | self-generation과 claude-mem 모두 훅 실행 시 세션 차단 방지 |
+| **비차단 설계** | reflexion과 claude-mem 모두 훅 실행 시 세션 차단 방지 |
 | **MCP 통합** | claude-mem과 QMD 모두 MCP Server로 검색 인터페이스 제공 |
 | **전역 설치** | 3개 프로젝트 모두 `~/` 하위에 전역 데이터 저장 |
-| **2단계 벡터 쿼리** | self-generation과 QMD 모두 sqlite-vec JOIN 버그 회피용 2단계 쿼리 사용 |
+| **2단계 벡터 쿼리** | reflexion과 QMD 모두 sqlite-vec JOIN 버그 회피용 2단계 쿼리 사용 |
 
 ### 4.2 설계 철학 공통점
 
-- **로컬 우선**: 외부 클라우드 서비스 최소화 (특히 self-generation, QMD)
-- **프라이버시 우선**: 민감 데이터 보호 장치 (self-generation: Bash 첫 단어만, claude-mem: `<private>` 태그)
+- **로컬 우선**: 외부 클라우드 서비스 최소화 (특히 reflexion, QMD)
+- **프라이버시 우선**: 민감 데이터 보호 장치 (reflexion: Bash 첫 단어만, claude-mem: `<private>` 태그)
 - **점진적 발전**: 단순한 수집 → 분석 → 활용으로 단계적 구현
 
 ---
 
 ## 5. 각 시스템의 데이터 저장/활용 특징
 
-### 5.1 self-generation: 패턴 중심 저장
+### 5.1 reflexion: 패턴 중심 저장
 
 ```
 수집 (hooks) → events 테이블 (원시 데이터)
@@ -237,7 +237,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ---
 
-## 6. self-generation에 차용할 수 있는 패턴
+## 6. reflexion에 차용할 수 있는 패턴
 
 ### 6.1 claude-mem에서 차용
 
@@ -265,7 +265,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ## 7. 설계 대체 검토
 
-### 7.1 현재 self-generation의 임베딩 인프라 vs 대안
+### 7.1 현재 reflexion의 임베딩 인프라 vs 대안
 
 | 현재 설계 | 대안 A: QMD 방식 | 대안 B: claude-mem 방식 |
 |----------|----------------|---------------------|
@@ -276,7 +276,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 | **장점**: 빠름, 가벼움, 다국어 | **장점**: 더 나은 임베딩 품질, 리랭킹 가능 | **장점**: 관리 편의 |
 | **단점**: 리랭킹/쿼리 확장 없음 | **단점**: 느림, VRAM 필요 | **단점**: Python 의존, 무거움 |
 
-**결론**: 현재 설계가 self-generation의 용도(에러 KB/스킬 매칭)에 최적. QMD 수준의 정교한 검색은 불필요.
+**결론**: 현재 설계가 reflexion의 용도(에러 KB/스킬 매칭)에 최적. QMD 수준의 정교한 검색은 불필요.
 
 ### 7.2 현재 데이터 수집 vs claude-mem Worker 패턴
 
@@ -287,7 +287,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 | 훅 실행 시간: ~10-50ms | 훅 실행 시간: ~5ms (HTTP POST만) |
 | 단순, 의존성 없음 | Express/Bun 추가 의존 |
 
-**결론**: self-generation의 훅은 이미 충분히 가볍다 (동기 SQLite write ~10ms). Worker 패턴은 claude-mem처럼 AI 요약 등 무거운 처리가 훅 내에서 필요할 때 가치가 있다. self-generation은 무거운 처리를 SessionEnd의 detached 프로세스로 분리하므로 현재 설계가 적합.
+**결론**: reflexion의 훅은 이미 충분히 가볍다 (동기 SQLite write ~10ms). Worker 패턴은 claude-mem처럼 AI 요약 등 무거운 처리가 훅 내에서 필요할 때 가치가 있다. reflexion은 무거운 처리를 SessionEnd의 detached 프로세스로 분리하므로 현재 설계가 적합.
 
 ### 7.3 MCP 검색 인터페이스 추가 검토
 
@@ -308,10 +308,10 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ```
 시나리오: claude-mem이 "도구 사용 관찰 + 세션 요약"을 이미 처리하므로,
-         self-generation은 분석/제안에만 집중
+         reflexion은 분석/제안에만 집중
 ```
 
-| 영역 | claude-mem에 위임 | self-generation이 유지 |
+| 영역 | claude-mem에 위임 | reflexion이 유지 |
 |------|------------------|---------------------|
 | 도구 사용 수집 | O (PostToolUse observation) | X (제거) |
 | 세션 요약 | O (Stop → summarize) | X (제거) |
@@ -328,12 +328,12 @@ vectors_vec         ← sqlite-vec 가상 테이블
 - **제거 가능**: `tool-logger.mjs`, `session-summary.mjs`의 일부 기능 (도구 사용 기록, 세션 요약)
 - **제거 불가**: 프롬프트 수집, 에러 추적, 해결 패턴 감지, 패턴 분석, 제안 엔진 전체
 - **문제점**:
-  - claude-mem의 데이터 스키마가 self-generation의 분석에 맞지 않음 (observation vs event)
-  - claude-mem은 "무엇이 일어났나"를 기록하지만, self-generation은 "왜/어떤 패턴으로"를 분석해야 함
+  - claude-mem의 데이터 스키마가 reflexion의 분석에 맞지 않음 (observation vs event)
+  - claude-mem은 "무엇이 일어났나"를 기록하지만, reflexion은 "왜/어떤 패턴으로"를 분석해야 함
   - claude-mem의 MCP 검색으로 데이터를 가져와도, 원시 이벤트 형태가 아니라 요약/압축된 형태
   - AGPL-3.0 라이선스 오염 위험
 
-**결론: 종속성 도입 부적합**. 수집 대상과 데이터 형태가 근본적으로 다르다. self-generation이 필요한 원시 이벤트 데이터는 claude-mem에서 제공하지 않는다.
+**결론: 종속성 도입 부적합**. 수집 대상과 데이터 형태가 근본적으로 다르다. reflexion이 필요한 원시 이벤트 데이터는 claude-mem에서 제공하지 않는다.
 
 ### 8.2 QMD를 종속성으로 도입
 
@@ -350,22 +350,22 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 **평가:**
 - QMD는 **문서 검색 엔진**이지, 구조화된 이벤트 데이터 검색에는 부적합
-- self-generation의 벡터 검색은 단순 KNN (에러 유사도, 스킬 매칭)이므로 QMD의 복잡한 파이프라인이 필요 없음
+- reflexion의 벡터 검색은 단순 KNN (에러 유사도, 스킬 매칭)이므로 QMD의 복잡한 파이프라인이 필요 없음
 - QMD를 함께 실행하면 GGUF 모델 3개 (~2GB) 추가 메모리 부담
-- 다만, self-generation이 생성한 분석 리포트나 스킬 문서를 QMD로 인덱싱하면 "내가 만든 자동화의 이력"을 검색하는 데 유용할 수 있음
+- 다만, reflexion이 생성한 분석 리포트나 스킬 문서를 QMD로 인덱싱하면 "내가 만든 자동화의 이력"을 검색하는 데 유용할 수 있음
 
-**결론: 종속성 도입 부적합, 보완적 활용은 가능**. QMD는 독립적으로 운영하면서 self-generation이 생성한 문서를 QMD 컬렉션에 추가하는 방식이 자연스럽다.
+**결론: 종속성 도입 부적합, 보완적 활용은 가능**. QMD는 독립적으로 운영하면서 reflexion이 생성한 문서를 QMD 컬렉션에 추가하는 방식이 자연스럽다.
 
 ### 8.3 추천: 독립 운영 + 인터페이스 연동
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐
-│ self-generation │     │   claude-mem    │     │     QMD      │
+│    reflexion    │     │   claude-mem    │     │     QMD      │
 │                 │     │                 │     │              │
 │ 패턴 분석/제안   │     │ 세션 메모리 보존  │     │ 문서 검색     │
 │                 │     │                 │     │              │
-│ ~/.self-gen/    │     │ ~/.claude-mem/  │     │ ~/.config/qmd│
-│ self-gen.db     │     │ claude-mem.db   │     │ DB files     │
+│ ~/.reflexion/   │     │ ~/.claude-mem/  │     │ ~/.config/qmd│
+│ reflexion.db    │     │ claude-mem.db   │     │ DB files     │
 └────────┬────────┘     └────────┬────────┘     └──────┬───────┘
          │                       │                      │
          │    ┌──────────────────┼──────────────────────┘
@@ -374,20 +374,20 @@ vectors_vec         ← sqlite-vec 가상 테이블
     ┌─────────────────────────────────────┐
     │         Claude Code Session          │
     │                                     │
-    │  Hooks: self-gen + claude-mem       │
+    │  Hooks: reflexion + claude-mem      │
     │  MCP: claude-mem search + QMD      │
-    │  Context: self-gen 분석 + mem 기억  │
+    │  Context: reflexion 분석 + mem 기억 │
     └─────────────────────────────────────┘
 ```
 
 **3개 시스템은 독립적으로 운영하되 Claude Code 세션에서 자연스럽게 합류한다:**
-- **self-generation**: Hooks로 패턴 수집/분석, SessionStart에서 개선 제안 주입
+- **reflexion**: Hooks로 패턴 수집/분석, SessionStart에서 개선 제안 주입
 - **claude-mem**: Hooks로 메모리 보존, SessionStart에서 이전 컨텍스트 주입
 - **QMD**: MCP Server로 문서 검색, Claude가 필요 시 호출
 
 ---
 
-## 9. self-generation 설계 개선 제안 요약
+## 9. reflexion 설계 개선 제안 요약
 
 ### 즉시 적용 가능 (Phase 1-2 구현 시)
 
@@ -421,7 +421,7 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ### 3개 시스템의 위치
 
-- **self-generation**은 "**학습하는 시스템**" — 패턴을 발견하고 자동화를 제안
+- **reflexion**은 "**학습하는 시스템**" — 패턴을 발견하고 자동화를 제안
 - **claude-mem**은 "**기억하는 시스템**" — 세션 간 컨텍스트를 보존
 - **QMD**는 "**검색하는 시스템**" — 문서에서 정보를 찾음
 
@@ -431,15 +431,15 @@ vectors_vec         ← sqlite-vec 가상 테이블
 
 ### 패턴 차용은 적극 권장
 
-claude-mem의 **Privacy 태그, Progressive Disclosure, MCP 인터페이스**와 QMD의 **Content-Addressable Storage, FTS5 하이브리드, Strong-signal shortcut**은 self-generation의 설계를 즉시 개선할 수 있는 검증된 패턴이다.
+claude-mem의 **Privacy 태그, Progressive Disclosure, MCP 인터페이스**와 QMD의 **Content-Addressable Storage, FTS5 하이브리드, Strong-signal shortcut**은 reflexion의 설계를 즉시 개선할 수 있는 검증된 패턴이다.
 
 ### 최적의 관계: 독립 운영 + 자연스러운 합류
 
 3개 시스템이 Claude Code 세션에서 각자의 역할을 수행하며 시너지를 낸다:
-1. self-generation이 "이 프롬프트 패턴을 스킬로 만들까요?"라고 제안하고
+1. reflexion이 "이 프롬프트 패턴을 스킬로 만들까요?"라고 제안하고
 2. claude-mem이 "지난 세션에서 이 기능을 작업했었습니다"라고 기억을 제공하며
 3. QMD가 "관련 문서는 DESIGN.md 3.2절에 있습니다"라고 검색 결과를 보여준다
 
 ---
 
-*이 문서는 self-generation 설계 참고용으로 작성되었으며, 각 프로젝트의 실제 구현은 변경될 수 있다.*
+*이 문서는 reflexion 설계 참고용으로 작성되었으며, 각 프로젝트의 실제 구현은 변경될 수 있다.*

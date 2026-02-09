@@ -76,11 +76,11 @@ Claude Code CLI가 설치되어 있어야 합니다 (`claude --version`으로 �
 
 ```bash
 # 저장소 클론
-git clone https://github.com/JakeB-5/self-generation.git
-cd self-generation
+git clone https://github.com/JakeB-5/reflexion.git
+cd reflexion
 
 # (또는 이미 클론된 경우)
-cd /path/to/self-generation
+cd /path/to/reflexion
 ```
 
 ### Step 2: 의존성 설치
@@ -113,7 +113,7 @@ node bin/install.mjs
 # 📦 의존성 설치 완료
 # ⚙️  config.json 초기화 완료
 # 🔗 settings.json에 훅 등록 완료
-# ✅ self-generation 설치가 완료되었습니다.
+# ✅ reflexion 설치가 완료되었습니다.
 ```
 
 #### 생성되는 디렉토리 구조
@@ -507,14 +507,14 @@ sqlite> .quit
 
 ```bash
 # 훅 등록 제거 (settings.json에서만 제거)
-node ~/self-generation/bin/install.mjs --uninstall
+node ~/reflexion/bin/install.mjs --uninstall
 
 # 출력 예:
-# ✅ self-generation 훅이 settings.json에서 제거되었습니다.
+# ✅ reflexion 훅이 settings.json에서 제거되었습니다.
 #    데이터 삭제: rm -rf ~/.reflexion
 
 # 확인
-grep -c "self-generation" ~/.claude/settings.json  # 0 또는 라인 수 없음
+grep -c "reflexion" ~/.claude/settings.json  # 0 또는 라인 수 없음
 ```
 
 ### 완전 제거 (데이터 포함)
@@ -524,7 +524,7 @@ grep -c "self-generation" ~/.claude/settings.json  # 0 또는 라인 수 없음
 node ~/.reflexion/bin/install.mjs --uninstall --purge
 
 # 출력 예:
-# ✅ self-generation 훅이 settings.json에서 제거되었습니다.
+# ✅ reflexion 훅이 settings.json에서 제거되었습니다.
 # 🗑️  데이터 디렉토리와 소켓 파일이 삭제되었습니다.
 
 # 확인
@@ -543,8 +543,8 @@ rm ~/.reflexion/data/reflexion.db*
 # 전체 삭제
 rm -rf ~/.reflexion/
 
-# settings.json에서 self-generation 훅 수동 제거
-# (편집기에서 ~/.claude/settings.json 열기 → self-generation 관련 항목 삭제)
+# settings.json에서 reflexion 훅 수동 제거
+# (편집기에서 ~/.claude/settings.json 열기 → reflexion 관련 항목 삭제)
 ```
 
 ---
@@ -592,7 +592,7 @@ npm install
 
 ```bash
 # 1. settings.json에 훅이 등록되었는지 확인
-grep -l "self-generation" ~/.claude/settings.json
+grep -l "reflexion" ~/.claude/settings.json
 
 # 2. enabled 설정 확인
 jq '.enabled' ~/.reflexion/config.json  # true여야 함
@@ -602,7 +602,7 @@ ls -la ~/.reflexion/hooks/
 
 # 4. 다시 설치
 node ~/.reflexion/bin/install.mjs --uninstall
-node ~/self-generation/bin/install.mjs
+node ~/reflexion/bin/install.mjs
 
 # 5. Claude Code 재시작 (매우 중요!)
 # Claude Code를 완전히 종료하고 재시작
@@ -631,14 +631,14 @@ node ~/.reflexion/bin/install.mjs
 
 # 또는 전체 재설치
 rm -rf ~/.reflexion/
-node ~/self-generation/bin/install.mjs
+node ~/reflexion/bin/install.mjs
 ```
 
 ### 임베딩 데몬 문제
 
 #### 증상
 ```
-Error: connect ENOENT /tmp/self-gen-embed.sock
+Error: connect ENOENT /tmp/reflexion-embed.sock
 ```
 
 #### 원인
@@ -648,13 +648,13 @@ Error: connect ENOENT /tmp/self-gen-embed.sock
 
 ```bash
 # 소켓 파일 확인
-ls -la /tmp/self-gen-embed.sock
+ls -la /tmp/reflexion-embed.sock
 
 # 데몬 로그 확인 (있는 경우)
 tail -20 ~/.reflexion/logs/daemon.log
 
 # 재시작
-kill $(lsof -t /tmp/self-gen-embed.sock) 2>/dev/null
+kill $(lsof -t /tmp/reflexion-embed.sock) 2>/dev/null
 # Claude Code 재시작
 
 # 모델 다운로드 대기 (인터넷 연결 필요)
