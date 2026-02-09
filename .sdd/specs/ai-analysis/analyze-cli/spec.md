@@ -22,19 +22,19 @@ constitution_version: "2.0.0"
 
 #### Scenario: 기본 인자로 실행
 
-- **GIVEN** 사용자가 `node ~/.self-generation/bin/analyze.mjs`를 인자 없이 실행한다
+- **GIVEN** 사용자가 `node ~/.reflexion/bin/analyze.mjs`를 인자 없이 실행한다
 - **WHEN** CLI가 인자를 파싱한다
 - **THEN** `days=30`, `project=null`, `projectPath=null`로 `runAnalysis()`가 호출된다
 
 #### Scenario: 커스텀 인자로 실행
 
-- **GIVEN** 사용자가 `node ~/.self-generation/bin/analyze.mjs --days 14 --project my-app`을 실행한다
+- **GIVEN** 사용자가 `node ~/.reflexion/bin/analyze.mjs --days 14 --project my-app`을 실행한다
 - **WHEN** CLI가 인자를 파싱한다
 - **THEN** `days=14`, `project='my-app'`, `projectPath=null`로 `runAnalysis()`가 호출된다
 
 #### Scenario: project-path 인자 포함 실행
 
-- **GIVEN** 사용자가 `node ~/.self-generation/bin/analyze.mjs --days 7 --project my-app --project-path /home/user/my-app`을 실행한다
+- **GIVEN** 사용자가 `node ~/.reflexion/bin/analyze.mjs --days 7 --project my-app --project-path /home/user/my-app`을 실행한다
 - **WHEN** CLI가 인자를 파싱한다
 - **THEN** `days=7`, `project='my-app'`, `projectPath='/home/user/my-app'`로 `runAnalysis()`가 호출된다
 
@@ -56,7 +56,7 @@ const projectPath = args.find((_, i, a) => a[i - 1] === '--project-path') || nul
 
 - **GIVEN** 사용자가 `--days 14`로 CLI를 실행한다
 - **WHEN** CLI가 시작된다
-- **THEN** `'=== Self-Generation AI 패턴 분석 (최근 14일) ==='`가 콘솔에 출력된다
+- **THEN** `'=== Reflexion AI 패턴 분석 (최근 14일) ==='`가 콘솔에 출력된다
 
 ---
 
@@ -114,7 +114,7 @@ const projectPath = args.find((_, i, a) => a[i - 1] === '--project-path') || nul
 
 - **GIVEN** 분석 결과 출력이 완료되었다
 - **WHEN** 마지막 줄이 출력된다
-- **THEN** `'제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <번호>'`가 출력된다
+- **THEN** `'제안을 적용하려면: node ~/.reflexion/bin/apply.mjs <번호>'`가 출력된다
 
 ---
 

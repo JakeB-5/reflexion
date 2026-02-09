@@ -300,8 +300,8 @@ ORDER BY ts DESC LIMIT 1
 | `claude --print` | Claude CLI의 비대화형 모드. 프롬프트를 받아 텍스트 응답만 반환 |
 | Content-Addressable Cache | 입력 데이터의 SHA-256 해시를 키로 사용하는 캐싱 전략. 동일 입력 → 동일 해시 → 캐시 히트 |
 | TTL | Time To Live. 캐시 유효 기간 (시간 단위) |
-| `analysis_cache` 테이블 | AI 분석 결과를 저장하는 SQLite 테이블 (`self-gen.db`) |
-| `events` 테이블 | 전역 이벤트를 저장하는 SQLite 테이블 (`self-gen.db`) |
+| `analysis_cache` 테이블 | AI 분석 결과를 저장하는 SQLite 테이블 (`reflexion.db`) |
+| `events` 테이블 | 전역 이벤트를 저장하는 SQLite 테이블 (`reflexion.db`) |
 | `input_hash` | 이벤트 배열의 SHA-256 해시. `(project, days, input_hash)` 조합으로 UNIQUE 인덱스 |
 | `db.mjs` | SQLite DB 접근 유틸리티 모듈 (`lib/db.mjs`) |
 | `prompts/analyze.md` | AI 분석에 사용되는 프롬프트 템플릿 파일 |

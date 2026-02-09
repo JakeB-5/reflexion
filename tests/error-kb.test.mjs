@@ -9,8 +9,8 @@ import { tmpdir } from 'os';
 
 // Override HOME before importing any modules
 const TEST_HOME = join(tmpdir(), `error-kb-test-${Date.now()}`);
-const SELF_GEN_DIR = join(TEST_HOME, '.self-generation');
-mkdirSync(join(SELF_GEN_DIR, 'data'), { recursive: true });
+const REFLEXION_DIR = join(TEST_HOME, '.reflexion');
+mkdirSync(join(REFLEXION_DIR, 'data'), { recursive: true });
 process.env.HOME = TEST_HOME;
 
 // Import modules after HOME is set

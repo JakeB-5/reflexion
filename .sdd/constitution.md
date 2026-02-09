@@ -4,7 +4,7 @@ created: 2026-02-07
 updated: 2026-02-09
 ---
 
-# Constitution: self-generation
+# Constitution: reflexion
 
 > Claude Code 사용 패턴을 자동 수집·분석하여 커스텀 스킬, CLAUDE.md 지침, 훅 워크플로우를 자동 제안하는 자기 개선 시스템. 모든 설계와 구현은 아래 원칙을 준수해야 한다(SHALL).
 
@@ -17,13 +17,13 @@ updated: 2026-02-09
 
 ### 2. 전역 우선, 프로젝트 필터링
 
-- 모든 이벤트는 단일 SQLite DB(`self-gen.db`)의 `events` 테이블에 기록해야 한다(SHALL)
+- 모든 이벤트는 단일 SQLite DB(`reflexion.db`)의 `events` 테이블에 기록해야 한다(SHALL)
 - 각 이벤트에 `project`(표시용)와 `project_path`(정규 식별자) 필드를 포함해야 한다(SHALL)
 - 프로젝트별 필터링은 `project_path` 기반 SQL 쿼리로 수행해야 한다(SHALL)
 
 ### 3. 프라이버시 보호
 
-- 모든 데이터는 로컬(`~/.self-generation/`)에만 저장해야 한다(SHALL)
+- 모든 데이터는 로컬(`~/.reflexion/`)에만 저장해야 한다(SHALL)
 - 수집된 데이터를 외부 서버로 전송해서는 안 된다(SHALL NOT)
 - Bash 명령어는 첫 단어(명령어명)만 저장해야 한다(SHALL)
 - 전체 인자나 민감 정보를 로그에 기록해서는 안 된다(SHALL NOT)
@@ -62,11 +62,11 @@ updated: 2026-02-09
 ## 기술 스택
 
 - **런타임**: Node.js >= 18 (ES Modules, `.mjs`)
-- **저장소**: SQLite (`better-sqlite3`) + `sqlite-vec` (벡터 확장), 단일 DB 파일 (`self-gen.db`), WAL 모드
+- **저장소**: SQLite (`better-sqlite3`) + `sqlite-vec` (벡터 확장), 단일 DB 파일 (`reflexion.db`), WAL 모드
 - **임베딩**: `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` (384차원, 오프라인)
 - **분석**: `claude --print` (AI 의미 기반 분석)
 - **훅 시스템**: Claude Code Hooks API (`~/.claude/settings.json`)
-- **설정**: JSON (`~/.self-generation/config.json`)
+- **설정**: JSON (`~/.reflexion/config.json`)
 
 ## 품질 기준
 

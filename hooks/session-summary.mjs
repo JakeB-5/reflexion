@@ -1,4 +1,4 @@
-// ~/.self-generation/hooks/session-summary.mjs
+// ~/.reflexion/hooks/session-summary.mjs
 import { insertEvent, queryEvents, getProjectName, getProjectPath, getDb, readStdin, generateEmbeddings, isEnabled, pruneOldEvents } from '../lib/db.mjs';
 import { runAnalysisAsync } from '../lib/ai-analyzer.mjs';
 import { join } from 'path';
@@ -62,7 +62,7 @@ try {
   // Batch embedding trigger (detached process)
   try {
     const { spawn } = await import('child_process');
-    const batchScript = join(process.env.HOME, '.self-generation', 'lib', 'batch-embeddings.mjs');
+    const batchScript = join(process.env.HOME, '.reflexion', 'lib', 'batch-embeddings.mjs');
     const child = spawn('node', [batchScript, getProjectPath(input.cwd)], {
       detached: true,
       stdio: 'ignore'

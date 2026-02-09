@@ -33,7 +33,7 @@ completed: 0
 - [ ] [P2] `skipAnalysis` 조건 구현 (v7 P8 보강) — `input.reason === 'clear'` 시 분석 생략, `prompts.length >= 3` 시에만 분석 트리거
 - [ ] [P2] AI 분석 트리거 구현 — import: `{ runAnalysisAsync }` from `'../lib/ai-analyzer.mjs'`, `{ spawn }` from `'child_process'`, `{ join }` from `'path'` — `!skipAnalysis && prompts.length >= 3` 시 `runAnalysisAsync({ days: 7, project, projectPath })` 호출
 - [ ] [P2] 확률적 DB 정리 (v9) — `Math.random() < 0.1` 시 `pruneOldEvents()` 호출 (10% 확률). `pruneOldEvents()` 인자 없이 호출 (내부에서 `loadConfig()`로 retentionDays 읽음). `try { pruneOldEvents(); } catch { /* Non-critical */ }` 패턴으로 감싸야 함
-- [ ] [P2] 배치 임베딩 트리거 (v8) — `child_process.spawn('node', [batchScript, projectPath], { detached: true, stdio: 'ignore' })` + `child.unref()` 로 detached 프로세스 실행. 경로: `join(process.env.HOME, '.self-generation', 'lib', 'batch-embeddings.mjs')`. spawn 시 `{ detached: true, stdio: 'ignore' }` + `child.unref()`
+- [ ] [P2] 배치 임베딩 트리거 (v8) — `child_process.spawn('node', [batchScript, projectPath], { detached: true, stdio: 'ignore' })` + `child.unref()` 로 detached 프로세스 실행. 경로: `join(process.env.HOME, '.reflexion', 'lib', 'batch-embeddings.mjs')`. spawn 시 `{ detached: true, stdio: 'ignore' }` + `child.unref()`
 
 ### Phase 3: 마무리
 

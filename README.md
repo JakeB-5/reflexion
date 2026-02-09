@@ -1,12 +1,12 @@
 [한국어](README.ko.md)
 
-# Self-Generation: Claude Code Auto-Improvement System
+# Reflexion: Claude Code Auto-Improvement System
 
 An autonomous system that collects and analyzes Claude Code usage patterns to automatically suggest custom skills, CLAUDE.md directives, and hook workflows.
 
 ## Overview
 
-Self-Generation uses the Claude Code Hooks API to collect user prompts, tool usage, and errors, then analyzes patterns using Claude in headless mode to generate custom directives for automating repetitive tasks.
+Reflexion uses the Claude Code Hooks API to collect user prompts, tool usage, and errors, then analyzes patterns using Claude in headless mode to generate custom directives for automating repetitive tasks.
 
 - **Target environment**: Vanilla Claude Code (no plugins required)
 - **Deployment status**: Phase 1-5 complete (251 tests passing)
@@ -161,18 +161,18 @@ Dismissed suggestions are excluded from future analysis.
 
 ## Output Types
 
-Self-Generation generates three types of suggestions based on detected patterns.
+Reflexion generates three types of suggestions based on detected patterns.
 
 | Output | Generated When | Saved To | Example |
 |--------|---------------|----------|---------|
 | **Custom Skills** | Repetitive tool sequences detected | `~/.claude/commands/*.md` | "Data Analysis" skill (pandas-related tools) |
 | **CLAUDE.md Rules** | Repetitive instructions/patterns detected | `.claude/CLAUDE.md` (project) or `~/.claude/CLAUDE.md` (global) | "Always start with tests" rule |
-| **Hook Workflows** | Repetitive event sequences detected | `~/.self-generation/hooks/auto/` | "Error occurs → Resolution" automation |
+| **Hook Workflows** | Repetitive event sequences detected | `~/.reflexion/hooks/auto/` | "Error occurs → Resolution" automation |
 
 ## Project Structure
 
 ```
-self-generation/
+reflexion/
 ├── README.md                      # This file
 ├── CLAUDE.md                      # Project guide
 ├── DESIGN.md                      # Complete system spec (SSOT)
@@ -254,11 +254,11 @@ All changes require a spec document with RFC 2119 keywords (SHALL, SHOULD, MAY).
 
 ## Architectural Principles
 
-Self-Generation's implementation is based on four core principles:
+Reflexion's implementation is based on four core principles:
 
 1. **Non-blocking hooks** — All hooks do not block Claude Code sessions (exit code 0)
 2. **Global-first, project filtering** — Single SQLite DB filtered by project_path
-3. **Privacy** — All data stored locally only (`~/.self-generation/`)
+3. **Privacy** — All data stored locally only (`~/.reflexion/`)
 4. **Minimal dependencies** — Exactly 3 npm packages used (`better-sqlite3`, `sqlite-vec`, `@xenova/transformers`)
 
 See [`.sdd/constitution.md`](.sdd/constitution.md) for detailed principles.

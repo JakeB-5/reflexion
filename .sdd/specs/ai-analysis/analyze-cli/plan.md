@@ -15,7 +15,7 @@ domain: ai-analysis
 ## Phase 1: 기반 구축
 
 ### 1.1 CLI 엔트리포인트 생성
-- `~/.self-generation/bin/analyze.mjs` 파일 생성
+- `~/.reflexion/bin/analyze.mjs` 파일 생성
 - `process.argv` 기반 인자 파싱 (`--days`, `--project`)
 - 기본값 설정: `days=30`, `project=null`
 
@@ -25,7 +25,7 @@ domain: ai-analysis
 
 ### 2.1 분석 실행 연동
 - `ai-analyzer.mjs`의 `runAnalysis()` import 및 호출
-- 분석 헤더 출력: `=== Self-Generation AI 패턴 분석 (최근 {days}일) ===`
+- 분석 헤더 출력: `=== Reflexion AI 패턴 분석 (최근 {days}일) ===`
 
 ### 2.2 결과 분기 처리
 - `result.error` → stderr 출력 + exit 1
@@ -37,7 +37,7 @@ domain: ai-analysis
 - 워크플로우 섹션: count, pattern, purpose
 - 에러 패턴 섹션: count, pattern, proposedRule
 - 제안 섹션: 번호, type, summary, evidence, action
-- 적용 안내 푸터: `제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <번호>`
+- 적용 안내 푸터: `제안을 적용하려면: node ~/.reflexion/bin/apply.mjs <번호>`
 
 ---
 

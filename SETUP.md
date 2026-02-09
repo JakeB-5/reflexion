@@ -1,8 +1,8 @@
 [한국어](SETUP.ko.md)
 
-# Self-Generation Setup and Usage Guide
+# Reflexion Setup and Usage Guide
 
-Self-Generation is a system that automatically collects and analyzes Claude Code usage patterns to improve repetitive tasks through custom skills, CLAUDE.md directives, and hook workflows. This guide covers installation, configuration, usage, and troubleshooting.
+Reflexion is a system that automatically collects and analyzes Claude Code usage patterns to improve repetitive tasks through custom skills, CLAUDE.md directives, and hook workflows. This guide covers installation, configuration, usage, and troubleshooting.
 
 ---
 
@@ -22,7 +22,7 @@ Self-Generation is a system that automatically collects and analyzes Claude Code
 
 ### Node.js Version
 
-Self-Generation uses `better-sqlite3` native bindings. Version compatibility is critical.
+Reflexion uses `better-sqlite3` native bindings. Version compatibility is critical.
 
 **Required**: Node.js v22 (or v18, v20)
 **Warning**: Node.js v24 causes better-sqlite3 native build failures — avoid it
@@ -104,7 +104,7 @@ If issues occur, see [Troubleshooting](#6-troubleshooting).
 ### Step 3: System Installation
 
 ```bash
-# Install Self-Generation system
+# Install Reflexion system
 node bin/install.mjs
 
 # Expected output:
@@ -118,13 +118,13 @@ node bin/install.mjs
 
 #### Created Directory Structure
 
-After installation, `~/.self-generation/` directory is created:
+After installation, `~/.reflexion/` directory is created:
 
 ```
-~/.self-generation/
+~/.reflexion/
 ├── config.json                 # System configuration
 ├── data/
-│   └── self-gen.db            # Database (SQLite)
+│   └── reflexion.db            # Database (SQLite)
 ├── hooks/                      # 8 hook scripts
 │   ├── prompt-logger.mjs       # UserPromptSubmit event
 │   ├── tool-logger.mjs         # PostToolUse event
@@ -168,14 +168,14 @@ After installation, hooks section is added to `~/.claude/settings.json`:
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "node ~/.self-generation/hooks/prompt-logger.mjs",
+        "command": "node ~/.reflexion/hooks/prompt-logger.mjs",
         "timeout": 5
       }
     ],
     "PostToolUse": [
       {
         "type": "command",
-        "command": "node ~/.self-generation/hooks/tool-logger.mjs",
+        "command": "node ~/.reflexion/hooks/tool-logger.mjs",
         "timeout": 5
       }
     ],
@@ -188,10 +188,10 @@ After installation, hooks section is added to `~/.claude/settings.json`:
 
 ```bash
 # Check config.json
-cat ~/.self-generation/config.json
+cat ~/.reflexion/config.json
 
 # Verify DB initialization
-ls -lh ~/.self-generation/data/self-gen.db
+ls -lh ~/.reflexion/data/reflexion.db
 
 # Verify hook registration
 grep -A 5 "UserPromptSubmit" ~/.claude/settings.json
@@ -199,7 +199,7 @@ grep -A 5 "UserPromptSubmit" ~/.claude/settings.json
 
 Expected output:
 ```bash
-$ cat ~/.self-generation/config.json
+$ cat ~/.reflexion/config.json
 {
   "enabled": true,
   "collectPromptText": true,
@@ -207,15 +207,15 @@ $ cat ~/.self-generation/config.json
   "analysisModel": "claude-sonnet-4-5-20250929"
 }
 
-$ ls -lh ~/.self-generation/data/self-gen.db
--rw-r--r--  1 user  staff  131K Feb  9 12:34 ~/.self-generation/data/self-gen.db
+$ ls -lh ~/.reflexion/data/reflexion.db
+-rw-r--r--  1 user  staff  131K Feb  9 12:34 ~/.reflexion/data/reflexion.db
 ```
 
 ---
 
 ## 3. Configuration (config.json)
 
-Self-Generation is configured via `~/.self-generation/config.json`.
+Reflexion is configured via `~/.reflexion/config.json`.
 
 ### Default Configuration File
 
@@ -239,12 +239,12 @@ Controls overall system activation.
 
 ```bash
 # Pause system
-jq '.enabled = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.enabled = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # Resume system
-jq '.enabled = true' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.enabled = true' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `collectPromptText` (boolean, default: true)
@@ -256,8 +256,8 @@ Controls whether full prompt text is stored in database (privacy).
 
 For privacy-sensitive scenarios:
 ```bash
-jq '.collectPromptText = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `retentionDays` (number, default: 90)
@@ -266,12 +266,12 @@ Data retention period in days. Events older than this are automatically deleted.
 
 ```bash
 # Change to 180 days
-jq '.retentionDays = 180' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 180' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # Permanent retention (999999)
-jq '.retentionDays = 999999' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 999999' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `analysisModel` (string, default: claude-sonnet-4-5-20250929)
@@ -285,22 +285,22 @@ Possible values:
 
 ```bash
 # More accurate analysis (Opus)
-jq '.analysisModel = "claude-opus-4-6"' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.analysisModel = "claude-opus-4-6"' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # Faster analysis (Haiku)
-jq '.analysisModel = "claude-haiku-4-5-20251001"' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.analysisModel = "claude-haiku-4-5-20251001"' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 ### Verify Configuration Changes
 
 ```bash
 # View current configuration
-cat ~/.self-generation/config.json
+cat ~/.reflexion/config.json
 
 # Validate JSON
-jq . ~/.self-generation/config.json
+jq . ~/.reflexion/config.json
 ```
 
 ---
@@ -329,10 +329,10 @@ After collecting at least 5 prompts, you can run analysis.
 
 ```bash
 # Basic analysis (last 30 days)
-node ~/.self-generation/bin/analyze.mjs
+node ~/.reflexion/bin/analyze.mjs
 
 # Example output:
-# === Self-Generation AI Pattern Analysis (Last 30 days) ===
+# === Reflexion AI Pattern Analysis (Last 30 days) ===
 #
 # --- Repeated Prompt Clusters ---
 #
@@ -361,20 +361,20 @@ node ~/.self-generation/bin/analyze.mjs
 #    Suggestion: Add "Run npm install first on test failures" to CLAUDE.md
 #
 # ---
-# To apply suggestions: node ~/.self-generation/bin/apply.mjs <number>
+# To apply suggestions: node ~/.reflexion/bin/apply.mjs <number>
 ```
 
 #### Analysis Options
 
 ```bash
 # Analyze last 60 days
-node ~/.self-generation/bin/analyze.mjs --days 60
+node ~/.reflexion/bin/analyze.mjs --days 60
 
 # Analyze specific project only
-node ~/.self-generation/bin/analyze.mjs --project-path /path/to/project
+node ~/.reflexion/bin/analyze.mjs --project-path /path/to/project
 
 # Analyze specific project (by name)
-node ~/.self-generation/bin/analyze.mjs --project my-project
+node ~/.reflexion/bin/analyze.mjs --project my-project
 ```
 
 ### Apply Suggestions
@@ -387,13 +387,13 @@ Create a custom skill to automate repetitive tasks.
 
 ```bash
 # Apply suggestion #1 (skill)
-node ~/.self-generation/bin/apply.mjs 1
+node ~/.reflexion/bin/apply.mjs 1
 
 # Output:
 # Skill created: /Users/user/.claude/commands/ts-init.md
 
 # Create project-scoped skill
-node ~/.self-generation/bin/apply.mjs 1 --project my-project
+node ~/.reflexion/bin/apply.mjs 1 --project my-project
 
 # Check created skill
 cat ~/.claude/commands/ts-init.md
@@ -424,7 +424,7 @@ Add recurring rules as project or global directives.
 
 ```bash
 # Apply suggestion #2 (CLAUDE.md)
-node ~/.self-generation/bin/apply.mjs 2
+node ~/.reflexion/bin/apply.mjs 2
 
 # Output:
 # CLAUDE.md updated: /Users/user/.claude/CLAUDE.md
@@ -433,7 +433,7 @@ node ~/.self-generation/bin/apply.mjs 2
 cat ~/.claude/CLAUDE.md
 
 # Apply project-scoped rule
-node ~/.self-generation/bin/apply.mjs 2 --project my-project
+node ~/.reflexion/bin/apply.mjs 2 --project my-project
 
 # Created locations:
 # Project scope: /path/to/project/.claude/CLAUDE.md
@@ -454,18 +454,18 @@ Register recurring tool sequences as automatic hooks.
 
 ```bash
 # Apply suggestion #3 (hook)
-node ~/.self-generation/bin/apply.mjs 3
+node ~/.reflexion/bin/apply.mjs 3
 
 # Output:
-# ✅ Hook script created: ~/.self-generation/hooks/auto/workflow-xxxxx.mjs
+# ✅ Hook script created: ~/.reflexion/hooks/auto/workflow-xxxxx.mjs
 #
 # Manual registration: Add to ~/.claude/settings.json:
-#   "PostToolUse": ["~/.self-generation/hooks/auto/workflow-xxxxx.mjs"]
+#   "PostToolUse": ["~/.reflexion/hooks/auto/workflow-xxxxx.mjs"]
 #
-# Or auto-register: node ~/.self-generation/bin/apply.mjs 3 --apply
+# Or auto-register: node ~/.reflexion/bin/apply.mjs 3 --apply
 
 # Auto-register to settings.json
-node ~/.self-generation/bin/apply.mjs 3 --apply
+node ~/.reflexion/bin/apply.mjs 3 --apply
 
 # Verify registration
 cat ~/.claude/settings.json | jq '.hooks.PostToolUse'
@@ -477,7 +477,7 @@ You can dismiss unwanted suggestions. Dismissed patterns are excluded from futur
 
 ```bash
 # Dismiss by suggestion ID
-node ~/.self-generation/bin/dismiss.mjs "suggestion-abc123"
+node ~/.reflexion/bin/dismiss.mjs "suggestion-abc123"
 
 # Output:
 # Suggestion dismissed: suggestion-abc123
@@ -490,7 +490,7 @@ Verify data is being collected properly.
 
 ```bash
 # Inspect DB with SQLite CLI
-sqlite3 ~/.self-generation/data/self-gen.db
+sqlite3 ~/.reflexion/data/reflexion.db
 
 # In DB shell prompt:
 sqlite> SELECT COUNT(*) as event_count FROM events;
@@ -511,7 +511,7 @@ node ~/self-generation/bin/install.mjs --uninstall
 
 # Output:
 # ✅ self-generation hooks removed from settings.json.
-#    To delete data: rm -rf ~/.self-generation
+#    To delete data: rm -rf ~/.reflexion
 
 # Verify
 grep -c "self-generation" ~/.claude/settings.json  # 0 or no lines
@@ -521,27 +521,27 @@ grep -c "self-generation" ~/.claude/settings.json  # 0 or no lines
 
 ```bash
 # Remove hooks + delete all data
-node ~/.self-generation/bin/install.mjs --uninstall --purge
+node ~/.reflexion/bin/install.mjs --uninstall --purge
 
 # Output:
 # ✅ self-generation hooks removed from settings.json.
 # 🗑️  Data directory and socket files deleted.
 
 # Verify
-ls ~/.self-generation  # Directory not found (or empty)
+ls ~/.reflexion  # Directory not found (or empty)
 ```
 
 ### Manual Cleanup
 
 ```bash
 # Remove hooks only (preserve data)
-rm -rf ~/.self-generation/hooks/
+rm -rf ~/.reflexion/hooks/
 
 # Delete DB only
-rm ~/.self-generation/data/self-gen.db*
+rm ~/.reflexion/data/reflexion.db*
 
 # Complete deletion
-rm -rf ~/.self-generation/
+rm -rf ~/.reflexion/
 
 # Manually remove self-generation hooks from settings.json
 # (Open ~/.claude/settings.json in editor → delete self-generation entries)
@@ -595,13 +595,13 @@ npm install
 grep -l "self-generation" ~/.claude/settings.json
 
 # 2. Check enabled setting
-jq '.enabled' ~/.self-generation/config.json  # Should be true
+jq '.enabled' ~/.reflexion/config.json  # Should be true
 
 # 3. Verify hook scripts exist
-ls -la ~/.self-generation/hooks/
+ls -la ~/.reflexion/hooks/
 
 # 4. Reinstall
-node ~/.self-generation/bin/install.mjs --uninstall
+node ~/.reflexion/bin/install.mjs --uninstall
 node ~/self-generation/bin/install.mjs
 
 # 5. Restart Claude Code (CRITICAL!)
@@ -616,21 +616,21 @@ sqlite error: database is locked
 ```
 
 #### Cause
-Multiple hooks accessing DB simultaneously. Self-Generation uses WAL (Write-Ahead Logging) mode to prevent this.
+Multiple hooks accessing DB simultaneously. Reflexion uses WAL (Write-Ahead Logging) mode to prevent this.
 
 #### Solution
 
 ```bash
 # Check WAL mode
-sqlite3 ~/.self-generation/data/self-gen.db "PRAGMA journal_mode;"
+sqlite3 ~/.reflexion/data/reflexion.db "PRAGMA journal_mode;"
 # Result: wal
 
 # If DB file corrupted, reinitialize
-rm ~/.self-generation/data/self-gen.db*
-node ~/.self-generation/bin/install.mjs
+rm ~/.reflexion/data/reflexion.db*
+node ~/.reflexion/bin/install.mjs
 
 # Or complete reinstall
-rm -rf ~/.self-generation/
+rm -rf ~/.reflexion/
 node ~/self-generation/bin/install.mjs
 ```
 
@@ -651,7 +651,7 @@ Embedding daemon not started. Usually occurs during first run when downloading O
 ls -la /tmp/self-gen-embed.sock
 
 # Check daemon logs (if available)
-tail -20 ~/.self-generation/logs/daemon.log
+tail -20 ~/.reflexion/logs/daemon.log
 
 # Restart
 kill $(lsof -t /tmp/self-gen-embed.sock) 2>/dev/null
@@ -729,19 +729,19 @@ npm install -g @anthropic-ai/sdk
 # 1. Check hooks working (see "Hooks Not Working" above)
 
 # 2. Check enabled setting
-jq '.enabled' ~/.self-generation/config.json
+jq '.enabled' ~/.reflexion/config.json
 
 # 3. Force test event creation
 # Repeat 10 simple tasks in Claude Code (Bash, Read, Edit, etc.)
 # Or programmatically:
 node -e "
-const db = require('better-sqlite3')('~/.self-generation/data/self-gen.db');
+const db = require('better-sqlite3')('~/.reflexion/data/reflexion.db');
 const count = db.prepare('SELECT COUNT(*) as cnt FROM events').get().cnt;
 console.log('Events:', count);
 "
 
 # 4. Rerun analysis
-node ~/.self-generation/bin/analyze.mjs --days 1
+node ~/.reflexion/bin/analyze.mjs --days 1
 ```
 
 ---
@@ -750,17 +750,17 @@ node ~/.self-generation/bin/analyze.mjs --days 1
 
 ### All Data Stored Locally
 
-Self-Generation operates completely locally. Collected data is never transmitted to external servers.
+Reflexion operates completely locally. Collected data is never transmitted to external servers.
 
 ```bash
 # Check data location
-ls -la ~/.self-generation/data/
+ls -la ~/.reflexion/data/
 
 # Check file size
-du -h ~/.self-generation/
+du -h ~/.reflexion/
 
 # Backup data
-cp -r ~/.self-generation ~/.self-generation.backup
+cp -r ~/.reflexion ~/.reflexion.backup
 ```
 
 ### Automatic Sensitive Information Protection
@@ -805,11 +805,11 @@ You can disable storing full prompt text. Only metadata will be stored.
 
 ```bash
 # Disable prompt collection
-jq '.collectPromptText = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # Verify
-jq '.collectPromptText' ~/.self-generation/config.json  # false
+jq '.collectPromptText' ~/.reflexion/config.json  # false
 ```
 
 With this setting enabled:
@@ -830,26 +830,26 @@ Automatically deleted according to `retentionDays` setting in `config.json` (def
 
 ```bash
 # Check current retention period
-jq '.retentionDays' ~/.self-generation/config.json
+jq '.retentionDays' ~/.reflexion/config.json
 
 # Shorten to 30 days
-jq '.retentionDays = 30' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 30' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### Manual Deletion
 
 ```bash
 # Delete specific project data only
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events WHERE project_path = '/path/to/project';"
 
 # Delete all data before specific date
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events WHERE ts < '2025-01-09T00:00:00Z';"
 
 # Delete all
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events; VACUUM;"
 ```
 
@@ -857,22 +857,22 @@ sqlite3 ~/.self-generation/data/self-gen.db \
 
 #### 1. File Permissions
 
-Self-Generation directory is automatically created with appropriate permissions.
+Reflexion directory is automatically created with appropriate permissions.
 
 ```bash
 # Check permissions (should be user read/write only)
-ls -ld ~/.self-generation
+ls -ld ~/.reflexion
 # Expected: drwx------ (700)
 
 # Set permissions if needed
-chmod 700 ~/.self-generation
-chmod 700 ~/.self-generation/data
-chmod 600 ~/.self-generation/data/self-gen.db
+chmod 700 ~/.reflexion
+chmod 700 ~/.reflexion/data
+chmod 600 ~/.reflexion/data/reflexion.db
 ```
 
 #### 2. Network Safety
 
-Self-Generation requires network communication:
+Reflexion requires network communication:
 
 - **Claude API calls**: Only when running Claude in headless mode (during AI analysis)
 - **Model download**: First run downloads ONNX embedding model (120MB)
@@ -884,7 +884,7 @@ Self-Generation requires network communication:
 
 ```bash
 # Embedding model cache location
-ls -la ~/.self-generation/models/
+ls -la ~/.reflexion/models/
 ```
 
 ---
@@ -905,29 +905,29 @@ npm install
 node bin/install.mjs
 
 # Analysis (30 days default)
-node ~/.self-generation/bin/analyze.mjs
-node ~/.self-generation/bin/analyze.mjs --days 60
-node ~/.self-generation/bin/analyze.mjs --project-path /path/to/project
+node ~/.reflexion/bin/analyze.mjs
+node ~/.reflexion/bin/analyze.mjs --days 60
+node ~/.reflexion/bin/analyze.mjs --project-path /path/to/project
 
 # Apply suggestions
-node ~/.self-generation/bin/apply.mjs 1          # Apply suggestion 1
-node ~/.self-generation/bin/apply.mjs 1 --apply  # Auto-register hook
+node ~/.reflexion/bin/apply.mjs 1          # Apply suggestion 1
+node ~/.reflexion/bin/apply.mjs 1 --apply  # Auto-register hook
 
 # Dismiss suggestions
-node ~/.self-generation/bin/dismiss.mjs "id"
+node ~/.reflexion/bin/dismiss.mjs "id"
 
 # Uninstallation
 node bin/install.mjs --uninstall                 # Remove hooks only
 node bin/install.mjs --uninstall --purge         # Complete removal
 
 # Modify configuration
-jq '.enabled = false' ~/.self-generation/config.json | tee ~/.self-generation/config.json
-jq '.collectPromptText = false' ~/.self-generation/config.json | tee ~/.self-generation/config.json
-jq '.retentionDays = 180' ~/.self-generation/config.json | tee ~/.self-generation/config.json
+jq '.enabled = false' ~/.reflexion/config.json | tee ~/.reflexion/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | tee ~/.reflexion/config.json
+jq '.retentionDays = 180' ~/.reflexion/config.json | tee ~/.reflexion/config.json
 
 # Check data
-sqlite3 ~/.self-generation/data/self-gen.db "SELECT COUNT(*) FROM events;"
-cat ~/.self-generation/config.json | jq .
+sqlite3 ~/.reflexion/data/reflexion.db "SELECT COUNT(*) FROM events;"
+cat ~/.reflexion/config.json | jq .
 ```
 
 ### FAQ
@@ -945,8 +945,8 @@ A: More data needed (minimum 30 events recommended). Or change `analysisModel` t
 A: No. If a skill with the same name exists, new skill creation is skipped.
 
 **Q: Can data be transferred to another computer?**
-A: Yes. Just copy `~/.self-generation/data/self-gen.db`. The DB is self-contained.
+A: Yes. Just copy `~/.reflexion/data/reflexion.db`. The DB is self-contained.
 
 ---
 
-**This guide is based on Self-Generation v0.1.0. (2026-02-09)**
+**This guide is based on Reflexion v0.1.0. (2026-02-09)**

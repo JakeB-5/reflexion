@@ -18,7 +18,7 @@ created: 2026-02-09
 ## Constitution 준수
 
 - [x] 비차단 훅: 설치 CLI 자체는 훅이 아니나, 등록하는 훅은 non-blocking 원칙 준수
-- [x] 프라이버시: 로컬 전용 (`~/.self-generation/`)
+- [x] 프라이버시: 로컬 전용 (`~/.reflexion/`)
 - [x] 최소 의존성: Node.js 내장 모듈만 사용 (설치 스크립트 자체)
 - [x] 명세 우선: 본 스펙 문서 작성 완료
 - [x] RFC 2119: SHALL/SHOULD 키워드 사용

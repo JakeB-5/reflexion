@@ -22,8 +22,8 @@ subagent-context는 서브에이전트 시작 시 프로젝트의 학습 데이�
 
 ### 파일 위치
 
-- 훅 스크립트: `~/.self-generation/hooks/subagent-context.mjs`
-- 의존 데이터: `~/.self-generation/data/self-gen.db` (`events` 테이블, `error_kb` 테이블, `analysis_cache` 테이블)
+- 훅 스크립트: `~/.reflexion/hooks/subagent-context.mjs`
+- 의존 데이터: `~/.reflexion/data/reflexion.db` (`events` 테이블, `error_kb` 테이블, `analysis_cache` 테이블)
 
 ### 훅 등록
 
@@ -33,7 +33,7 @@ subagent-context는 서브에이전트 시작 시 프로젝트의 학습 데이�
     "SubagentStart": [{
       "hooks": [{
         "type": "command",
-        "command": "node $HOME/.self-generation/hooks/subagent-context.mjs"
+        "command": "node $HOME/.reflexion/hooks/subagent-context.mjs"
       }]
     }]
   }

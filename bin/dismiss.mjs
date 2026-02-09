@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// ~/.self-generation/bin/dismiss.mjs
+// ~/.reflexion/bin/dismiss.mjs
 import { recordFeedback } from '../lib/feedback-tracker.mjs';
 
 const args = process.argv.slice(2);
 const suggestionId = args[0];
 
 if (!suggestionId) {
-  console.error('사용법: node ~/.self-generation/bin/dismiss.mjs <suggestion-id>');
+  console.error('사용법: node ~/.reflexion/bin/dismiss.mjs <suggestion-id>');
   process.exit(1);
 }
 

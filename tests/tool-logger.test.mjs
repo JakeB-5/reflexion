@@ -10,13 +10,13 @@ import { spawn } from 'child_process';
 
 // Override HOME before importing db.mjs
 const TEST_HOME = join(tmpdir(), `tool-logger-test-${Date.now()}`);
-const SELF_GEN_DIR = join(TEST_HOME, '.self-generation');
-mkdirSync(join(SELF_GEN_DIR, 'data'), { recursive: true });
+const REFLEXION_DIR = join(TEST_HOME, '.reflexion');
+mkdirSync(join(REFLEXION_DIR, 'data'), { recursive: true });
 process.env.HOME = TEST_HOME;
 
 // Create default config
 writeFileSync(
-  join(SELF_GEN_DIR, 'config.json'),
+  join(REFLEXION_DIR, 'config.json'),
   JSON.stringify({ enabled: true }, null, 2)
 );
 
@@ -507,7 +507,7 @@ describe('tool-logger hook', () => {
     it('should skip recording when system disabled', async () => {
       // Disable system
       writeFileSync(
-        join(SELF_GEN_DIR, 'config.json'),
+        join(REFLEXION_DIR, 'config.json'),
         JSON.stringify({ enabled: false }, null, 2)
       );
 
@@ -526,7 +526,7 @@ describe('tool-logger hook', () => {
 
       // Re-enable for other tests
       writeFileSync(
-        join(SELF_GEN_DIR, 'config.json'),
+        join(REFLEXION_DIR, 'config.json'),
         JSON.stringify({ enabled: true }, null, 2)
       );
     });

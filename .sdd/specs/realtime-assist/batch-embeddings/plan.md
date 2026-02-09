@@ -51,7 +51,7 @@ status: draft
 스크립트 파일 및 의존성 설정
 
 **산출물:**
-- [ ] `~/.self-generation/lib/batch-embeddings.mjs` 파일 생성
+- [ ] `~/.reflexion/lib/batch-embeddings.mjs` 파일 생성
 - [ ] import 설정: `db.mjs`, `skill-matcher.mjs`, `embedding-client.mjs`
 - [ ] `process.argv[2]` 인자 파싱
 - [ ] 최상위 try-catch + `process.exit(0)` 래퍼

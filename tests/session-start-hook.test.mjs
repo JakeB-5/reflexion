@@ -38,7 +38,7 @@ async function runHook(stdin, testHome) {
 // Helper: setup test environment
 function setupTestEnv() {
   const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'session-start-test-'));
-  const selfGenDir = path.join(testHome, '.self-generation');
+  const selfGenDir = path.join(testHome, '.reflexion');
   const dataDir = path.join(selfGenDir, 'data');
   const libDir = path.join(selfGenDir, 'lib');
 
@@ -72,7 +72,7 @@ function cleanupTestEnv(testHome) {
 // Helper: seed database with events
 async function seedDatabase(dataDir, events) {
   const Database = (await import('better-sqlite3')).default;
-  const dbPath = path.join(dataDir, 'self-gen.db');
+  const dbPath = path.join(dataDir, 'reflexion.db');
   const db = new Database(dbPath);
 
   db.exec(`
@@ -111,7 +111,7 @@ async function seedDatabase(dataDir, events) {
 // Helper: seed analysis cache
 async function seedAnalysisCache(dataDir, cacheEntry) {
   const Database = (await import('better-sqlite3')).default;
-  const dbPath = path.join(dataDir, 'self-gen.db');
+  const dbPath = path.join(dataDir, 'reflexion.db');
   const db = new Database(dbPath);
 
   db.exec(`
@@ -228,7 +228,7 @@ describe('session-start-hook (hooks/session-analyzer.mjs)', () => {
       assert.equal(output.hookSpecificOutput.hookEventName, 'SessionStart');
 
       const context = output.hookSpecificOutput.additionalContext;
-      assert.match(context, /\[Self-Generation\] AI 패턴 분석 결과:/);
+      assert.match(context, /\[Reflexion\] AI 패턴 분석 결과:/);
       assert.match(context, /\[skill\] TS 프로젝트 초기화 \[id: suggest-0\]/);
       assert.match(context, /\[directive\] 린트 규칙 추가 \[id: suggest-1\]/);
       assert.match(context, /\[hook\] 빌드 자동화 \[id: suggest-2\]/);
@@ -316,10 +316,10 @@ describe('session-start-hook (hooks/session-analyzer.mjs)', () => {
       assert.equal(code, 0);
 
       const context = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-      assert.match(context, /\[Self-Generation\] AI 패턴 분석 결과:/);
+      assert.match(context, /\[Reflexion\] AI 패턴 분석 결과:/);
       assert.match(context, /- \[skill\] TS 프로젝트 초기화 스킬 \[id: suggest-0\]/);
-      assert.match(context, /node ~\/.self-generation\/bin\/apply\.mjs <번호>/);
-      assert.match(context, /node ~\/.self-generation\/bin\/dismiss\.mjs <id>/);
+      assert.match(context, /node ~\/.reflexion\/bin\/apply\.mjs <번호>/);
+      assert.match(context, /node ~\/.reflexion\/bin\/dismiss\.mjs <id>/);
 
       cleanupTestEnv(testHome);
     });
@@ -360,7 +360,7 @@ describe('session-start-hook (hooks/session-analyzer.mjs)', () => {
       assert.equal(code, 0);
 
       const context = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-      assert.match(context, /\[Self-Generation\] 이전 세션 컨텍스트/);
+      assert.match(context, /\[Reflexion\] 이전 세션 컨텍스트/);
       assert.match(context, /프롬프트 15개, 도구 60회 사용/);
       assert.match(context, /이전 세션 마지막 작업: "테스트 작성해줘"/);
       assert.match(context, /수정 중이던 파일: src\/app\.ts/);
@@ -567,7 +567,7 @@ describe('session-start-hook (hooks/session-analyzer.mjs)', () => {
       const { testHome, dataDir } = setupTestEnv();
 
       // Create corrupted database
-      fs.writeFileSync(path.join(dataDir, 'self-gen.db'), 'CORRUPTED DATA');
+      fs.writeFileSync(path.join(dataDir, 'reflexion.db'), 'CORRUPTED DATA');
 
       const stdin = {
         source: 'startup',

@@ -32,7 +32,7 @@ completed: 0
 
 ### Phase 3: 제거 로직
 
-- [ ] [P3] `--uninstall` 처리 — `.self-generation` 포함 훅 필터링 제거, 빈 배열 정리
+- [ ] [P3] `--uninstall` 처리 — `.reflexion` 포함 훅 필터링 제거, 빈 배열 정리
 - [ ] [P3] `--purge` 처리 — `rmSync({ recursive: true, force: true })` 데이터 삭제 + `/tmp/self-gen-embed.sock` 소켓 파일 정리. NOTE: DESIGN.md에는 --purge 구현이 없음 (spec MAY 확장). DESIGN.md L1909의 --uninstall은 훅 제거 + 안내 메시지만 출력
 
 ### Phase 4: 검증 및 테스트

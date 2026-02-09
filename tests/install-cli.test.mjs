@@ -8,8 +8,8 @@ import { join } from 'path';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 
-const TEST_HOME = join(tmpdir(), `self-gen-test-${Date.now()}`);
-const SELF_GEN_DIR = join(TEST_HOME, '.self-generation');
+const TEST_HOME = join(tmpdir(), `reflexion-test-${Date.now()}`);
+const REFLEXION_DIR = join(TEST_HOME, '.reflexion');
 const CLAUDE_DIR = join(TEST_HOME, '.claude');
 const SETTINGS_PATH = join(CLAUDE_DIR, 'settings.json');
 const INSTALL_SCRIPT = join(process.cwd(), 'bin', 'install.mjs');
@@ -17,7 +17,7 @@ const INSTALL_SCRIPT = join(process.cwd(), 'bin', 'install.mjs');
 // Wrapper to run install.mjs with overridden HOME and skipped npm install
 function runInstall(args = '') {
   return execSync(`node ${INSTALL_SCRIPT} ${args}`, {
-    env: { ...process.env, HOME: TEST_HOME, SELF_GEN_SKIP_NPM: '1' },
+    env: { ...process.env, HOME: TEST_HOME, REFLEXION_SKIP_NPM: '1' },
     encoding: 'utf-8',
     timeout: 30000
   });
@@ -40,14 +40,14 @@ describe('install-cli', () => {
     it('should create 5 subdirectories', () => {
       runInstall();
       for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
-        assert.ok(existsSync(join(SELF_GEN_DIR, dir)), `${dir} should exist`);
+        assert.ok(existsSync(join(REFLEXION_DIR, dir)), `${dir} should exist`);
       }
     });
 
     it('should create package.json with correct content', () => {
       runInstall();
-      const pkg = readJSON(join(SELF_GEN_DIR, 'package.json'));
-      assert.equal(pkg.name, 'self-generation');
+      const pkg = readJSON(join(REFLEXION_DIR, 'package.json'));
+      assert.equal(pkg.name, 'reflexion');
       assert.equal(pkg.version, '0.1.0');
       assert.equal(pkg.type, 'module');
       assert.equal(pkg.private, true);
@@ -58,7 +58,7 @@ describe('install-cli', () => {
 
     it('should create config.json with defaults', () => {
       runInstall();
-      const config = readJSON(join(SELF_GEN_DIR, 'config.json'));
+      const config = readJSON(join(REFLEXION_DIR, 'config.json'));
       assert.equal(config.enabled, true);
       assert.equal(config.collectPromptText, true);
       assert.equal(config.retentionDays, 90);
@@ -109,17 +109,17 @@ describe('install-cli', () => {
       const settings = readJSON(SETTINGS_PATH);
       // Each event should have exactly 1 hook group
       for (const event of Object.keys(settings.hooks)) {
-        const selfGenGroups = settings.hooks[event].filter(
-          g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+        const reflexionGroups = settings.hooks[event].filter(
+          g => g.hooks?.some(h => h.command?.includes('.reflexion'))
         );
-        assert.equal(selfGenGroups.length, 1, `${event} should have exactly 1 self-gen group`);
+        assert.equal(reflexionGroups.length, 1, `${event} should have exactly 1 reflexion group`);
       }
     });
 
     it('should not overwrite existing package.json', () => {
       runInstall();
       // Modify package.json
-      const pkgPath = join(SELF_GEN_DIR, 'package.json');
+      const pkgPath = join(REFLEXION_DIR, 'package.json');
       const pkg = readJSON(pkgPath);
       pkg.version = '99.0.0';
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
@@ -131,7 +131,7 @@ describe('install-cli', () => {
 
     it('should not overwrite existing config.json', () => {
       runInstall();
-      const cfgPath = join(SELF_GEN_DIR, 'config.json');
+      const cfgPath = join(REFLEXION_DIR, 'config.json');
       const cfg = readJSON(cfgPath);
       cfg.retentionDays = 999;
       writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
@@ -154,7 +154,7 @@ describe('install-cli', () => {
       }, null, 2));
       runInstall();
       const settings = readJSON(SETTINGS_PATH);
-      // Should have 2 groups: existing + self-generation
+      // Should have 2 groups: existing + reflexion
       assert.equal(settings.hooks.UserPromptSubmit.length, 2);
       assert.ok(
         settings.hooks.UserPromptSubmit[0].hooks[0].command.includes('/other/hook.mjs'),
@@ -164,14 +164,14 @@ describe('install-cli', () => {
   });
 
   describe('--uninstall', () => {
-    it('should remove self-generation hooks only', () => {
+    it('should remove reflexion hooks only', () => {
       // Pre-create with mixed hooks
       mkdirSync(CLAUDE_DIR, { recursive: true });
       writeFileSync(SETTINGS_PATH, JSON.stringify({
         hooks: {
           UserPromptSubmit: [
             { hooks: [{ type: 'command', command: 'node /other/hook.mjs' }] },
-            { hooks: [{ type: 'command', command: 'node /home/.self-generation/hooks/prompt-logger.mjs' }] }
+            { hooks: [{ type: 'command', command: 'node /home/.reflexion/hooks/prompt-logger.mjs' }] }
           ]
         }
       }, null, 2));
@@ -186,7 +186,7 @@ describe('install-cli', () => {
       writeFileSync(SETTINGS_PATH, JSON.stringify({
         hooks: {
           SessionEnd: [
-            { hooks: [{ type: 'command', command: 'node /home/.self-generation/hooks/session-summary.mjs' }] }
+            { hooks: [{ type: 'command', command: 'node /home/.reflexion/hooks/session-summary.mjs' }] }
           ]
         }
       }, null, 2));
@@ -196,10 +196,10 @@ describe('install-cli', () => {
     });
 
     it('should preserve data directory without --purge', () => {
-      mkdirSync(SELF_GEN_DIR, { recursive: true });
-      writeFileSync(join(SELF_GEN_DIR, 'test.txt'), 'data');
+      mkdirSync(REFLEXION_DIR, { recursive: true });
+      writeFileSync(join(REFLEXION_DIR, 'test.txt'), 'data');
       runInstall('--uninstall');
-      assert.ok(existsSync(SELF_GEN_DIR), 'data directory should be preserved');
+      assert.ok(existsSync(REFLEXION_DIR), 'data directory should be preserved');
     });
 
     it('should handle missing settings.json gracefully', () => {
@@ -210,17 +210,17 @@ describe('install-cli', () => {
 
   describe('--uninstall --purge', () => {
     it('should delete data directory', () => {
-      mkdirSync(join(SELF_GEN_DIR, 'data'), { recursive: true });
-      writeFileSync(join(SELF_GEN_DIR, 'data', 'test.db'), 'data');
+      mkdirSync(join(REFLEXION_DIR, 'data'), { recursive: true });
+      writeFileSync(join(REFLEXION_DIR, 'data', 'test.db'), 'data');
       runInstall('--uninstall --purge');
-      assert.ok(!existsSync(SELF_GEN_DIR), 'data directory should be deleted');
+      assert.ok(!existsSync(REFLEXION_DIR), 'data directory should be deleted');
     });
 
     it('--purge without --uninstall should warn and proceed', () => {
       const output = runInstall('--purge');
       assert.ok(output.includes('--uninstall과 함께'), 'should show warning');
       // Should still install
-      assert.ok(existsSync(SELF_GEN_DIR), 'should proceed with install');
+      assert.ok(existsSync(REFLEXION_DIR), 'should proceed with install');
     });
   });
 });

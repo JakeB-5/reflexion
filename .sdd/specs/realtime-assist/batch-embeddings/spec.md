@@ -20,8 +20,8 @@ constitution_version: "2.0.0"
 
 ### 파일 위치
 
-- 스크립트: `~/.self-generation/lib/batch-embeddings.mjs`
-- 데이터: `~/.self-generation/data/self-gen.db`
+- 스크립트: `~/.reflexion/lib/batch-embeddings.mjs`
+- 데이터: `~/.reflexion/data/reflexion.db`
 
 ### 의존 모듈
 
@@ -256,7 +256,7 @@ constitution_version: "2.0.0"
 - 임베딩 차원: 384 (float 배열) (SHALL)
 - 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 사용 (SHALL) — 내부적으로 `embedding-client.mjs`의 `embedViaServer()`를 호출
 - 스킬 로드에 `skill-matcher.mjs`의 `loadSkills()`, `extractPatterns()` 사용 (SHALL)
-- DB 경로: `~/.self-generation/data/self-gen.db` (SHALL)
+- DB 경로: `~/.reflexion/data/reflexion.db` (SHALL)
 
 ---
 

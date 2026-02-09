@@ -9,9 +9,9 @@ import { execSync } from 'child_process';
 import Database from 'better-sqlite3';
 
 const TEST_HOME = join(process.cwd(), 'test-home-subagent-context');
-const GLOBAL_DIR = join(TEST_HOME, '.self-generation');
+const GLOBAL_DIR = join(TEST_HOME, '.reflexion');
 const DATA_DIR = join(GLOBAL_DIR, 'data');
-const DB_PATH = join(DATA_DIR, 'self-gen.db');
+const DB_PATH = join(DATA_DIR, 'reflexion.db');
 
 function setup() {
   if (existsSync(TEST_HOME)) rmSync(TEST_HOME, { recursive: true });

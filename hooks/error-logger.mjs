@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ~/.self-generation/hooks/error-logger.mjs
+// ~/.reflexion/hooks/error-logger.mjs
 // PostToolUseFailure hook — record tool errors + real-time KB search
 
 import { insertEvent, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
@@ -45,7 +45,7 @@ try {
           } catch {
             // If resolution is not JSON, use as-is
           }
-          return `[Self-Generation 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
+          return `[Reflexion 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
             `- 에러: ${kbMatch.error_normalized}\n` +
             `- 해결 방법: ${resText}\n` +
             `이 정보를 참고하여 해결을 시도하세요.`;

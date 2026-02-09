@@ -63,7 +63,7 @@ constitution_version: "2.0.0"
   {
     "hookSpecificOutput": {
       "hookEventName": "PostToolUseFailure",
-      "additionalContext": "[Self-Generation 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n- 에러: <error_normalized>\n- 해결 방법: <resolution>\n이 정보를 참고하여 해결을 시도하세요."
+      "additionalContext": "[Reflexion 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n- 에러: <error_normalized>\n- 해결 방법: <resolution>\n이 정보를 참고하여 해결을 시도하세요."
     }
   }
   ```

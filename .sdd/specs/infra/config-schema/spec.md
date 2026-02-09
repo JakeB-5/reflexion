@@ -10,13 +10,13 @@ constitution_version: "2.0.0"
 
 # Config Schema
 
-> 시스템 설정 스키마 모듈. `~/.self-generation/config.json` 파일의 전체 스키마를 정의하고, 설정 로딩(`loadConfig`), 시스템 활성화 확인(`isEnabled`), 기본값 병합, 검증 규칙을 제공한다. 모든 훅과 CLI 도구가 이 모듈을 통해 설정에 접근한다.
+> 시스템 설정 스키마 모듈. `~/.reflexion/config.json` 파일의 전체 스키마를 정의하고, 설정 로딩(`loadConfig`), 시스템 활성화 확인(`isEnabled`), 기본값 병합, 검증 규칙을 제공한다. 모든 훅과 CLI 도구가 이 모듈을 통해 설정에 접근한다.
 
 ---
 
 ## Requirement: REQ-INF-101 — config.json 전체 스키마 정의
 
-시스템은 `~/.self-generation/config.json`의 스키마를 다음과 같이 정의(SHALL)해야 한다.
+시스템은 `~/.reflexion/config.json`의 스키마를 다음과 같이 정의(SHALL)해야 한다.
 
 ### 최상위 필드
 
@@ -29,7 +29,7 @@ constitution_version: "2.0.0"
 | `analysisOnSessionEnd` | boolean | `true` | 세션 종료 시 AI 분석 자동 실행 여부 |
 | `analysisDays` | number | `7` | AI 분석 대상 기간 (일) |
 | `analysisCacheMaxAgeHours` | number | `24` | AI 분석 캐시 유효 기간 (시간) |
-| `dbPath` | string | `"~/.self-generation/data/self-gen.db"` | SQLite DB 파일 경로 |
+| `dbPath` | string | `"~/.reflexion/data/reflexion.db"` | SQLite DB 파일 경로 |
 | `embedding` | object | *(하위 참조)* | 임베딩 설정 객체 |
 
 ### embedding 중첩 객체
@@ -41,7 +41,7 @@ constitution_version: "2.0.0"
 | `embedding.dimensions` | number | `384` | 임베딩 벡터 차원 수 |
 | `embedding.threshold` | number | `0.76` | 벡터 유사도 매칭 임계값 |
 | `embedding.batchSize` | number | `50` | 배치 임베딩 처리 단위 |
-| `embedding.modelCacheDir` | string | `"~/.self-generation/models/"` | 모델 캐시 디렉토리 |
+| `embedding.modelCacheDir` | string | `"~/.reflexion/models/"` | 모델 캐시 디렉토리 |
 
 ### embedding.server 중첩 객체
 
@@ -65,14 +65,14 @@ constitution_version: "2.0.0"
     "analysisOnSessionEnd": true,
     "analysisDays": 7,
     "analysisCacheMaxAgeHours": 24,
-    "dbPath": "~/.self-generation/data/self-gen.db",
+    "dbPath": "~/.reflexion/data/reflexion.db",
     "embedding": {
       "enabled": true,
       "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
       "dimensions": 384,
       "threshold": 0.76,
       "batchSize": 50,
-      "modelCacheDir": "~/.self-generation/models/",
+      "modelCacheDir": "~/.reflexion/models/",
       "server": {
         "socketPath": "/tmp/self-gen-embed.sock",
         "idleTimeoutMinutes": 30,
@@ -86,17 +86,17 @@ constitution_version: "2.0.0"
 
 ## Requirement: REQ-INF-102 — 설정 로딩 (loadConfig)
 
-시스템은 `~/.self-generation/config.json` 파일을 읽어 JavaScript 객체로 반환하는 `loadConfig()` 함수를 제공(SHALL)해야 한다.
+시스템은 `~/.reflexion/config.json` 파일을 읽어 JavaScript 객체로 반환하는 `loadConfig()` 함수를 제공(SHALL)해야 한다.
 
 ### Scenario: 정상 설정 파일 로딩
 
-- **GIVEN** `~/.self-generation/config.json`이 유효한 JSON으로 존재하는 상태
+- **GIVEN** `~/.reflexion/config.json`이 유효한 JSON으로 존재하는 상태
 - **WHEN** `loadConfig()`를 호출하면
 - **THEN** 파일 내용을 `JSON.parse()`로 파싱하여 객체를 반환(SHALL)한다
 
 ### Scenario: config.json 미존재 시 기본값 반환
 
-- **GIVEN** `~/.self-generation/config.json` 파일이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/config.json` 파일이 존재하지 않는 상태
 - **WHEN** `loadConfig()`를 호출하면
 - **THEN** 빈 객체 `{}`를 반환(SHALL)한다. 각 사용처에서 필드별 기본값을 적용한다
 
@@ -110,7 +110,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** `loadConfig()` 내부에서 파일 경로를 구성하는 상태
 - **WHEN** 경로를 결정하면
-- **THEN** `GLOBAL_DIR` 상수(`~/.self-generation/`)와 `'config.json'`을 `path.join()`으로 결합(SHALL)한다
+- **THEN** `GLOBAL_DIR` 상수(`~/.reflexion/`)와 `'config.json'`을 `path.join()`으로 결합(SHALL)한다
 
 ---
 
@@ -150,7 +150,7 @@ constitution_version: "2.0.0"
   - `RETENTION_DAYS = 90`
   - `ANALYSIS_DAYS = 7`
   - `ANALYSIS_CACHE_MAX_AGE_HOURS = 24`
-  - `DEFAULT_DB_PATH = '~/.self-generation/data/self-gen.db'`
+  - `DEFAULT_DB_PATH = '~/.reflexion/data/reflexion.db'`
   - `DEFAULT_EMBEDDING_MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'`
   - `DEFAULT_EMBEDDING_DIMENSIONS = 384`
   - `DEFAULT_EMBEDDING_THRESHOLD = 0.76`
@@ -181,7 +181,7 @@ constitution_version: "2.0.0"
 | `analysisOnSessionEnd` | `typeof === 'boolean'` | — | `true` |
 | `analysisDays` | `typeof === 'number'` | `> 0` | `7` |
 | `analysisCacheMaxAgeHours` | `typeof === 'number'` | `> 0` | `24` |
-| `dbPath` | `typeof === 'string'` | 비어있지 않음 | `"~/.self-generation/data/self-gen.db"` |
+| `dbPath` | `typeof === 'string'` | 비어있지 않음 | `"~/.reflexion/data/reflexion.db"` |
 | `embedding` | `typeof === 'object'` | `null`이 아님 | `{}` |
 | `embedding.dimensions` | `typeof === 'number'` | `> 0` | `384` |
 | `embedding.threshold` | `typeof === 'number'` | `0 < x ≤ 1` | `0.76` |
@@ -215,7 +215,7 @@ constitution_version: "2.0.0"
 
 ### Scenario: 최초 설치 시 config.json 생성
 
-- **GIVEN** `~/.self-generation/config.json`이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/config.json`이 존재하지 않는 상태
 - **WHEN** `install.mjs`가 실행되면
 - **THEN** 다음 최소 설정이 생성(SHALL)된다:
   ```json
@@ -229,7 +229,7 @@ constitution_version: "2.0.0"
 
 ### Scenario: 기존 config.json 보존
 
-- **GIVEN** `~/.self-generation/config.json`이 이미 존재하는 상태
+- **GIVEN** `~/.reflexion/config.json`이 이미 존재하는 상태
 - **WHEN** `install.mjs`가 실행되면
 - **THEN** 기존 파일을 덮어쓰지 않고 보존(SHALL)한다
 

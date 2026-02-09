@@ -39,8 +39,8 @@ status: draft
 디렉토리 구조와 모듈 파일 생성
 
 **산출물:**
-- [ ] `~/.self-generation/lib/db.mjs` 파일 생성
-- [ ] `~/.self-generation/data/` 디렉토리 자동 생성 로직
+- [ ] `~/.reflexion/lib/db.mjs` 파일 생성
+- [ ] `~/.reflexion/data/` 디렉토리 자동 생성 로직
 
 ### Phase 2: 핵심 함수 구현
 

@@ -1,4 +1,4 @@
-// ~/.self-generation/hooks/session-analyzer.mjs (v6 extended)
+// ~/.reflexion/hooks/session-analyzer.mjs (v6 extended)
 import { queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
@@ -14,13 +14,13 @@ try {
   // 1. Cached AI analysis injection
   const analysis = getCachedAnalysis(24, project);
   if (analysis && analysis.suggestions?.length > 0) {
-    let msg = '[Self-Generation] AI 패턴 분석 결과:\n';
+    let msg = '[Reflexion] AI 패턴 분석 결과:\n';
     for (const s of analysis.suggestions.slice(0, 3)) {
       msg += `- [${s.type}] ${s.summary} [id: ${s.id}]\n`;
     }
     msg += '\n사용자에게 이 개선 제안을 알려주세요.';
-    msg += '\n사용자가 승인하면 `node ~/.self-generation/bin/apply.mjs <번호>` 로 적용하세요.';
-    msg += '\n사용자가 거부하면 `node ~/.self-generation/bin/dismiss.mjs <id>` 로 기록하세요.';
+    msg += '\n사용자가 승인하면 `node ~/.reflexion/bin/apply.mjs <번호>` 로 적용하세요.';
+    msg += '\n사용자가 거부하면 `node ~/.reflexion/bin/dismiss.mjs <id>` 로 기록하세요.';
     contextParts.push(msg);
   }
 
@@ -29,7 +29,7 @@ try {
 
   if (recentSummaries.length > 0) {
     const prev = recentSummaries[0];
-    const parts = [`[Self-Generation] 이전 세션 컨텍스트 (${prev.ts}):`];
+    const parts = [`[Reflexion] 이전 세션 컨텍스트 (${prev.ts}):`];
     parts.push(`- 프롬프트 ${prev.promptCount}개, 도구 ${Object.values(prev.toolCounts || {}).reduce((a, b) => a + b, 0)}회 사용`);
 
     if (prev.lastPrompts?.length > 0) {

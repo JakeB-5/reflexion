@@ -47,4 +47,4 @@ depends_on:
 
 ## 비고
 
-Phase 3에서 훅 워크플로우 적용 시 `~/.self-generation/hooks/auto/` 디렉토리가 동적으로 생성된다. 이 디렉토리는 install-cli에서 사전 생성하지 않으며, `suggestion-cli`의 훅 적용 로직에서 재귀적으로 생성한다.
+Phase 3에서 훅 워크플로우 적용 시 `~/.reflexion/hooks/auto/` 디렉토리가 동적으로 생성된다. 이 디렉토리는 install-cli에서 사전 생성하지 않으며, `suggestion-cli`의 훅 적용 로직에서 재귀적으로 생성한다.

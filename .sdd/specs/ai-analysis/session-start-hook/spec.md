@@ -18,7 +18,7 @@ constitution_version: "2.0.0"
 
 ### REQ-SSH-001: 시스템 활성화 확인
 
-시스템은 `isEnabled()` 함수로 Self-Generation 시스템 활성화 여부를 확인하고, 비활성 시 즉시 exit code 0으로 종료해야 한다(SHALL).
+시스템은 `isEnabled()` 함수로 Reflexion 시스템 활성화 여부를 확인하고, 비활성 시 즉시 exit code 0으로 종료해야 한다(SHALL).
 
 #### Scenario: 시스템 비활성 시 즉시 종료
 
@@ -67,10 +67,10 @@ constitution_version: "2.0.0"
 - **GIVEN** suggestions 배열에 `{ type: 'skill', summary: 'TS 프로젝트 초기화 스킬', id: 'suggest-0' }` 항목이 있다
 - **WHEN** 제안 메시지를 포맷팅한다
 - **THEN** 출력 문자열에 다음이 포함된다:
-  - `'[Self-Generation] AI 패턴 분석 결과:'` 헤더
+  - `'[Reflexion] AI 패턴 분석 결과:'` 헤더
   - `'- [skill] TS 프로젝트 초기화 스킬 [id: suggest-0]'` 제안 항목
-  - `'node ~/.self-generation/bin/apply.mjs <번호>'` 적용 안내
-  - `'node ~/.self-generation/bin/dismiss.mjs <id>'` 거부 안내
+  - `'node ~/.reflexion/bin/apply.mjs <번호>'` 적용 안내
+  - `'node ~/.reflexion/bin/dismiss.mjs <id>'` 거부 안내
 
 ---
 
@@ -83,7 +83,7 @@ constitution_version: "2.0.0"
 - **GIVEN** `events` 테이블에 이전 세션의 `type = 'session_summary'` 레코드가 존재하고, `promptCount: 15`, `toolCounts: { Read: 30, Edit: 20, Bash: 10 }`, `lastPrompts: ['테스트 작성해줘']`, `lastEditedFiles: ['src/app.ts']`, `errorCount: 2`, `uniqueErrors: ['TypeError: ...', 'RangeError: ...']` 필드가 포함되어 있다
 - **WHEN** SessionStart 훅이 실행된다
 - **THEN** `contextParts`에 다음 정보가 포함된 메시지가 추가된다:
-  - `'[Self-Generation] 이전 세션 컨텍스트 ({ts}):'` 헤더
+  - `'[Reflexion] 이전 세션 컨텍스트 ({ts}):'` 헤더
   - `'프롬프트 15개, 도구 60회 사용'`
   - `'이전 세션 마지막 작업: "테스트 작성해줘"'`
   - `'수정 중이던 파일: src/app.ts'`
@@ -182,7 +182,7 @@ try {
 
 #### Scenario: DB 손상 또는 접근 실패
 
-- **GIVEN** `self-gen.db` 파일이 손상되었거나 접근할 수 없다
+- **GIVEN** `reflexion.db` 파일이 손상되었거나 접근할 수 없다
 - **WHEN** SessionStart 훅이 실행된다
 - **THEN** 예외가 catch되고 exit code 0으로 종료된다
 

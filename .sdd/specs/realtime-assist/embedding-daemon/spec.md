@@ -36,7 +36,7 @@ constitution_version: "2.0.0"
 
 ### REQ-RA-502: Transformers.js 모델 로딩
 
-시스템은 `@xenova/transformers`의 `pipeline('feature-extraction', ...)` API로 `Xenova/paraphrase-multilingual-MiniLM-L12-v2` 모델을 로딩해야 한다(SHALL). 모델 캐시 디렉토리는 `~/.self-generation/models/`로 설정한다(SHALL). 모델은 384차원 벡터를 생성한다.
+시스템은 `@xenova/transformers`의 `pipeline('feature-extraction', ...)` API로 `Xenova/paraphrase-multilingual-MiniLM-L12-v2` 모델을 로딩해야 한다(SHALL). 모델 캐시 디렉토리는 `~/.reflexion/models/`로 설정한다(SHALL). 모델은 384차원 벡터를 생성한다.
 
 **실행 순서**: stale socket 정리(REQ-RA-502) → 모델 로딩(REQ-RA-501) → `server.listen()` 순서로 실행해야 한다(SHALL).
 
@@ -44,7 +44,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** 서버 프로세스가 시작된 상태
 - **WHEN** `init()` 함수가 호출된다
-- **THEN** `env.cacheDir`을 `~/.self-generation/models/`로 설정하고(SHALL), `pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2')`로 모델을 로딩한다. stderr에 `[embedding-server] Loading model...` → `[embedding-server] Model loaded, ready for requests` 메시지를 순서대로 출력한다(SHALL)
+- **THEN** `env.cacheDir`을 `~/.reflexion/models/`로 설정하고(SHALL), `pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2')`로 모델을 로딩한다. stderr에 `[embedding-server] Loading model...` → `[embedding-server] Model loaded, ready for requests` 메시지를 순서대로 출력한다(SHALL)
 
 #### Scenario: 텍스트 임베딩 생성
 
@@ -238,7 +238,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** 임베딩 서버가 실행 중이 아닌 상태
 - **WHEN** `await startServer()`를 호출한다
-- **THEN** `child_process.spawn('node', [serverPath], { detached: true, stdio: 'ignore' })`로 서버를 시작하고(SHALL), `child.unref()`로 부모 프로세스와 분리한다(SHALL). `serverPath`는 `~/.self-generation/lib/embedding-server.mjs`이다
+- **THEN** `child_process.spawn('node', [serverPath], { detached: true, stdio: 'ignore' })`로 서버를 시작하고(SHALL), `child.unref()`로 부모 프로세스와 분리한다(SHALL). `serverPath`는 `~/.reflexion/lib/embedding-server.mjs`이다
 
 #### Scenario: 호출자 프로세스 비차단
 
@@ -274,7 +274,7 @@ constitution_version: "2.0.0"
 
 - 소켓 경로: `/tmp/self-gen-embed.sock` (하드코딩)
 - 모델: `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (384차원, 오프라인 지원)
-- 모델 캐시: `~/.self-generation/models/`
+- 모델 캐시: `~/.reflexion/models/`
 - 프로토콜: newline-delimited JSON (한 연결에 한 요청)
 - 서버는 ES Module (`.mjs`)로 작성, `node` 직접 실행
 

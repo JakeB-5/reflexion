@@ -20,13 +20,13 @@ constitution_version: "2.0.0"
 
 ### Scenario: 정상 이벤트 삽입
 
-- **GIVEN** `~/.self-generation/data/self-gen.db` 데이터베이스가 초기화된 상태
+- **GIVEN** `~/.reflexion/data/reflexion.db` 데이터베이스가 초기화된 상태
 - **WHEN** `insertEvent(entry)`를 호출하면
 - **THEN** `events` 테이블에 새 행이 INSERT(SHALL)된다. `entry`의 공통 필드(`v`, `type`, `ts`, `sessionId`, `project`, `projectPath`)는 각 컬럼에, 나머지 타입별 필드(`...rest`)는 `data` JSON 컬럼에 `JSON.stringify(rest)`로 저장된다
 
 ### Scenario: 데이터베이스 자동 초기화
 
-- **GIVEN** `~/.self-generation/data/self-gen.db` 파일이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/data/reflexion.db` 파일이 존재하지 않는 상태
 - **WHEN** `insertEvent()`가 호출되면
 - **THEN** `getDb()`를 통해 DB가 자동 생성 및 초기화(SHALL)된 후 이벤트가 삽입된다
 
@@ -80,7 +80,7 @@ constitution_version: "2.0.0"
 
 ### Scenario: 최초 DB 생성 시 스키마 초기화
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않거나 `events` 테이블이 없는 상태
+- **GIVEN** `reflexion.db` 파일이 존재하지 않거나 `events` 테이블이 없는 상태
 - **WHEN** `initDb(db)`가 호출되면
 - **THEN** 다음 테이블과 인덱스가 생성(SHALL)된다:
   ```sql
@@ -152,14 +152,14 @@ constitution_version: "2.0.0"
 
 ## Requirement: REQ-DC-005 — 설정 로딩 (loadConfig, isEnabled)
 
-시스템은 `~/.self-generation/config.json` 파일에서 설정을 로드하는 `loadConfig()` 유틸리티 함수와, 시스템 활성화 여부를 확인하는 `isEnabled()` 함수를 제공(SHALL)해야 한다.
+시스템은 `~/.reflexion/config.json` 파일에서 설정을 로드하는 `loadConfig()` 유틸리티 함수와, 시스템 활성화 여부를 확인하는 `isEnabled()` 함수를 제공(SHALL)해야 한다.
 
 ### 설정 필드
 
 - `enabled` (boolean, 기본값: true): 시스템 전체 활성화 여부
 - `collectPromptText` (boolean, 기본값: true): 프롬프트 원문 수집 여부
 - `retentionDays` (number, 기본값: 90): 이벤트 보관 기한 (일)
-- `dbPath` (string, 기본값: `~/.self-generation/data/self-gen.db`): SQLite DB 파일 경로
+- `dbPath` (string, 기본값: `~/.reflexion/data/reflexion.db`): SQLite DB 파일 경로
 - `analysisOnSessionEnd` (boolean, 기본값: true): 세션 종료 시 AI 분석 자동 실행 여부
 - `analysisDays` (number, 기본값: 7): AI 분석 대상 기간 (일)
 - `analysisCacheMaxAgeHours` (number, 기본값: 24): AI 분석 캐시 유효 기간 (시간)
@@ -167,7 +167,7 @@ constitution_version: "2.0.0"
 
 ### Scenario: config.json 미존재 시 기본값 사용
 
-- **GIVEN** `~/.self-generation/config.json` 파일이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/config.json` 파일이 존재하지 않는 상태
 - **WHEN** `loadConfig()`를 호출하면
 - **THEN** 빈 객체 `{}`를 반환(SHALL)한다 (각 사용처에서 기본값 적용)
 

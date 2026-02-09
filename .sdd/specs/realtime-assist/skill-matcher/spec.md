@@ -20,8 +20,8 @@ skill-matcher는 사용자가 입력한 프롬프트를 분석하여, 이미 생
 
 ### 파일 위치
 
-- 모듈: `~/.self-generation/lib/skill-matcher.mjs`
-- 데이터: `~/.self-generation/data/self-gen.db` (`skill_embeddings` 테이블)
+- 모듈: `~/.reflexion/lib/skill-matcher.mjs`
+- 데이터: `~/.reflexion/data/reflexion.db` (`skill_embeddings` 테이블)
 
 ### skill_embeddings 테이블 스키마
 

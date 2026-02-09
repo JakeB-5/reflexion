@@ -15,7 +15,7 @@ SessionStart 이벤트에서 캐시된 AI 분석 제안과 이전 세션 컨텍�
 ## Phase 1: 기반 구축
 
 ### 1.1 훅 스크립트 스캐폴딩
-- `~/.self-generation/hooks/session-analyzer.mjs` 파일 생성
+- `~/.reflexion/hooks/session-analyzer.mjs` 파일 생성
 - 최상위 try-catch 블록으로 전체 코드 감싸기
 - stdin 읽기 (`readStdin()` from log-writer)
 - 의존 모듈 import: `ai-analyzer.mjs`, `log-writer.mjs`
@@ -30,7 +30,7 @@ SessionStart 이벤트에서 캐시된 AI 분석 제안과 이전 세션 컨텍�
 - 상위 3개 제안을 `formatSuggestionsForContext()`로 포맷팅
 
 ### 2.2 제안 포맷팅 함수
-- `[Self-Generation] AI 패턴 분석 결과:` 헤더
+- `[Reflexion] AI 패턴 분석 결과:` 헤더
 - 각 제안: `- [type] summary [id: suggest-N]` 형식
 - 적용/거부 CLI 안내 푸터
 

@@ -37,6 +37,6 @@
   2. 반복 도구 시퀀스: [count회] pattern (purpose)
   3. 반복 에러 패턴: [count회] pattern, proposedRule
   4. 개선 제안: 번호, [type] summary, 근거, 제안
-- **적용 안내**: node ~/.self-generation/bin/apply.mjs <번호>
+- **적용 안내**: node ~/.reflexion/bin/apply.mjs <번호>
 - **성능**: CLI 자체 오버헤드 100ms 이내 (인자 파싱 + 포맷팅)
 - **runAnalysis 의존**: 전체 실행 시간은 runAnalysis() 소요 시간에 의존

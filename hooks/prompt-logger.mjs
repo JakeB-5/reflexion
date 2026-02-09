@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ~/.self-generation/hooks/prompt-logger.mjs
+// ~/.reflexion/hooks/prompt-logger.mjs
 // Hook: UserPromptSubmit — Record prompts + skill auto-detection
 
 import { insertEvent, getProjectName, getProjectPath, readStdin, loadConfig, stripPrivateTags } from '../lib/db.mjs';
@@ -39,7 +39,7 @@ try {
       const output = {
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
-          additionalContext: `[Self-Generation] 이 작업과 관련된 커스텀 스킬이 있습니다: ` +
+          additionalContext: `[Reflexion] 이 작업과 관련된 커스텀 스킬이 있습니다: ` +
             `\`/${matched.name}\` (${matched.scope === 'global' ? '전역' : '프로젝트'} 스킬)\n` +
             `사용자에게 이 스킬 사용을 제안해주세요.`
         }

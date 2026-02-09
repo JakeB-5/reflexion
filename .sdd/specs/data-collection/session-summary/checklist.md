@@ -45,6 +45,6 @@
 - **runAnalysisAsync는 ai-analyzer에서 import**: import { runAnalysisAsync } from '../lib/ai-analyzer.mjs'
 - **pruneOldEvents는 db.mjs에서 import**: import { pruneOldEvents } from '../lib/db.mjs' — 10% 확률로 호출
 - **toolSequence 용도**: 워크플로우 패턴 분석 (예: Read→Edit→Bash 반복)
-- **배치 임베딩 스크립트**: ~/.self-generation/lib/batch-embeddings.mjs
+- **배치 임베딩 스크립트**: ~/.reflexion/lib/batch-embeddings.mjs
 - **배치 임베딩 딜레이**: 10초 딜레이 후 실행하여 DB 쓰기 경합 감소 (WAL + busy_timeout으로 최종 보장)
 - **JSONL 제거**: 저장소는 SQLite events 테이블, insertEvent()/queryEvents() 사용

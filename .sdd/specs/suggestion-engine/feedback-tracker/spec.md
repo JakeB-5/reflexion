@@ -23,8 +23,8 @@ constitution_version: "2.0.0"
 | 대상 | 역할 |
 |------|------|
 | `lib/feedback-tracker.mjs` | 피드백 기록, 요약, 효과성 메트릭 |
-| `feedback` 테이블 (`self-gen.db`) | 피드백 데이터 저장소 |
-| `events` 테이블 (`self-gen.db`) | 스킬 사용/에러 이벤트 조회 대상 |
+| `feedback` 테이블 (`reflexion.db`) | 피드백 데이터 저장소 |
+| `events` 테이블 (`reflexion.db`) | 스킬 사용/에러 이벤트 조회 대상 |
 
 ### 의존 모듈
 
@@ -124,7 +124,7 @@ VALUES (1, ?, ?, ?, ?, ?)
 
 #### Scenario: DB 접근 실패
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않거나 접근할 수 없을 때
+- **GIVEN** `reflexion.db` 파일이 존재하지 않거나 접근할 수 없을 때
 - **WHEN** `getFeedbackSummary()`를 호출하면
 - **THEN** 예외를 throw하지 않고 `null`을 반환한다
 
@@ -155,7 +155,7 @@ SELECT COUNT(*) AS cnt FROM events WHERE type = 'skill_created'
 
 #### Scenario: DB 접근 실패
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않거나 접근할 수 없을 때
+- **GIVEN** `reflexion.db` 파일이 존재하지 않거나 접근할 수 없을 때
 - **WHEN** `calcSkillUsageRate()`를 호출하면
 - **THEN** `null`을 반환한다
 
@@ -184,7 +184,7 @@ SELECT COUNT(*) AS cnt FROM events WHERE type = 'tool_error' AND ts >= ?
 
 #### Scenario: DB 접근 실패
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않거나 접근할 수 없을 때
+- **GIVEN** `reflexion.db` 파일이 존재하지 않거나 접근할 수 없을 때
 - **WHEN** `calcRuleEffectiveness()`를 호출하면
 - **THEN** `null`을 반환한다
 
@@ -230,7 +230,7 @@ ORDER BY ts DESC LIMIT 1
 
 #### Scenario: DB 접근 실패
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않거나 접근할 수 없을 때
+- **GIVEN** `reflexion.db` 파일이 존재하지 않거나 접근할 수 없을 때
 - **WHEN** `findStaleSkills(30)`을 호출하면
 - **THEN** 빈 배열 `[]`을 반환한다
 
@@ -309,8 +309,8 @@ ORDER BY ts DESC LIMIT 1
 | 용어 | 정의 |
 |------|------|
 | 피드백(feedback) | 제안에 대한 사용자 행동 기록 (채택/거부/무시) |
-| `feedback` 테이블 | 피드백 레코드를 저장하는 SQLite 테이블 (`self-gen.db`) |
-| `events` 테이블 | 이벤트 로그를 저장하는 SQLite 테이블 (`self-gen.db`) |
+| `feedback` 테이블 | 피드백 레코드를 저장하는 SQLite 테이블 (`reflexion.db`) |
+| `events` 테이블 | 이벤트 로그를 저장하는 SQLite 테이블 (`reflexion.db`) |
 | 채택률(rate) | `acceptedCount / total` 비율 (0~1) |
 | 스킬 사용률(skillUsageRate) | `skill_used` 이벤트 수 / `skill_created` 이벤트 수 |
 | 규칙 효과성(ruleEffectiveness) | `{ totalErrors, recentErrors }` — 전체 에러 수와 최근 7일 에러 수 |

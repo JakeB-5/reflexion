@@ -22,8 +22,8 @@ subagent-tracker는 Claude Code의 SubagentStop 이벤트를 수신하여 서브
 
 ### 파일 위치
 
-- 훅 스크립트: `~/.self-generation/hooks/subagent-tracker.mjs`
-- 이벤트 저장: `~/.self-generation/data/self-gen.db` (`events` 테이블)
+- 훅 스크립트: `~/.reflexion/hooks/subagent-tracker.mjs`
+- 이벤트 저장: `~/.reflexion/data/reflexion.db` (`events` 테이블)
 
 ### 훅 등록
 
@@ -33,7 +33,7 @@ subagent-tracker는 Claude Code의 SubagentStop 이벤트를 수신하여 서브
     "SubagentStop": [{
       "hooks": [{
         "type": "command",
-        "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs"
+        "command": "node $HOME/.reflexion/hooks/subagent-tracker.mjs"
       }]
     }]
   }
@@ -179,7 +179,7 @@ LIMIT ?
 
 #### Scenario RA-203-2: DB 쓰기 실패 시
 
-- **GIVEN** `self-gen.db` 파일에 쓰기 권한이 없는 환경
+- **GIVEN** `reflexion.db` 파일에 쓰기 권한이 없는 환경
 - **WHEN** subagent-tracker.mjs가 실행되면
 - **THEN** exit code 0으로 정상 종료한다
 

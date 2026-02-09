@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ~/.self-generation/bin/analyze.mjs
+// ~/.reflexion/bin/analyze.mjs
 // CLI tool for on-demand AI pattern analysis
 
 import { runAnalysis } from '../lib/ai-analyzer.mjs';
@@ -9,7 +9,7 @@ const days = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '30');
 const project = args.find((_, i, a) => a[i - 1] === '--project') || null;
 const projectPath = args.find((_, i, a) => a[i - 1] === '--project-path') || null;
 
-console.log(`\n=== Self-Generation AI 패턴 분석 (최근 ${days}일) ===\n`);
+console.log(`\n=== Reflexion AI 패턴 분석 (최근 ${days}일) ===\n`);
 
 const result = await runAnalysis({ days, project, projectPath });
 
@@ -63,4 +63,4 @@ if (result.suggestions?.length > 0) {
 }
 
 console.log('---');
-console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <번호>');
+console.log('제안을 적용하려면: node ~/.reflexion/bin/apply.mjs <번호>');

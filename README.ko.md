@@ -1,12 +1,12 @@
 [English](README.md)
 
-# Self-Generation: Claude Code 자동 개선 시스템
+# Reflexion: Claude Code 자동 개선 시스템
 
 Claude Code 사용 패턴을 자동 수집·분석하여 커스텀 스킬, CLAUDE.md 지침, 훅 워크플로우를 자동으로 제안하는 자기 개선 시스템입니다.
 
 ## 개요
 
-Self-Generation은 Claude Code Hooks API를 통해 사용자의 프롬프트, 도구 사용, 에러를 수집하고, Claude 헤드리스 모드로 패턴을 분석하여 반복적인 작업을 자동화하는 데 필요한 커스텀 지침을 생성합니다.
+Reflexion은 Claude Code Hooks API를 통해 사용자의 프롬프트, 도구 사용, 에러를 수집하고, Claude 헤드리스 모드로 패턴을 분석하여 반복적인 작업을 자동화하는 데 필요한 커스텀 지침을 생성합니다.
 
 - **대상 환경**: Vanilla Claude Code (플러그인 불필요)
 - **배포 상태**: Phase 1~5 완료 (251개 테스트 통과)
@@ -161,18 +161,18 @@ node bin/dismiss.mjs suggestion-id-3
 
 ## 출력 유형
 
-Self-Generation은 감지된 패턴에 따라 3가지 유형의 제안을 생성합니다.
+Reflexion은 감지된 패턴에 따라 3가지 유형의 제안을 생성합니다.
 
 | 출력 | 생성 시 | 저장 위치 | 예시 |
 |------|--------|---------|------|
 | **커스텀 스킬** | 반복 도구 시퀀스 감지 | `~/.claude/commands/*.md` | "데이터 분석" 스킬 (pandas 관련 도구들) |
 | **CLAUDE.md 규칙** | 반복 지침/패턴 감지 | `.claude/CLAUDE.md` (프로젝트) 또는 `~/.claude/CLAUDE.md` (전역) | "항상 테스트부터" 규칙 |
-| **훅 워크플로우** | 반복 이벤트 시퀀스 감지 | `~/.self-generation/hooks/auto/` | "에러 발생 → 해결" 자동화 |
+| **훅 워크플로우** | 반복 이벤트 시퀀스 감지 | `~/.reflexion/hooks/auto/` | "에러 발생 → 해결" 자동화 |
 
 ## 프로젝트 구조
 
 ```
-self-generation/
+reflexion/
 ├── README.md                      # 이 파일
 ├── CLAUDE.md                      # 프로젝트 가이드
 ├── DESIGN.md                      # 완전한 시스템 스펙 (SSOT)
@@ -254,11 +254,11 @@ node --test tests/db.test.mjs
 
 ## 아키텍트 선택 기준
 
-Self-Generation의 구현은 4개 주요 원칙을 기반으로 합니다:
+Reflexion의 구현은 4개 주요 원칙을 기반으로 합니다:
 
 1. **비차단 훅** — 모든 훅은 Claude Code 세션을 차단하지 않습니다 (exit code 0)
 2. **전역 우선, 프로젝트 필터링** — 단일 SQLite DB에서 project_path로 필터링
-3. **프라이버시** — 모든 데이터는 로컬(`~/.self-generation/`)에만 저장됨
+3. **프라이버시** — 모든 데이터는 로컬(`~/.reflexion/`)에만 저장됨
 4. **최소 의존성** — 정확히 3개 npm 패키지만 사용 (`better-sqlite3`, `sqlite-vec`, `@xenova/transformers`)
 
 자세한 원칙은 [`.sdd/constitution.md`](.sdd/constitution.md)를 참조하세요.

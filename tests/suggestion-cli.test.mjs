@@ -16,9 +16,9 @@ describe('Suggestion CLI Tests', () => {
   before(() => {
     // Setup test HOME with pre-seeded DB
     rmSync(TEST_HOME, { recursive: true, force: true });
-    mkdirSync(join(TEST_HOME, '.self-generation', 'data'), { recursive: true });
+    mkdirSync(join(TEST_HOME, '.reflexion', 'data'), { recursive: true });
 
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
 
@@ -108,7 +108,7 @@ describe('Suggestion CLI Tests', () => {
     assert.match(result, /향후 AI 분석 시 제외 컨텍스트로 전달됩니다/);
 
     // Verify DB record
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     const row = db.prepare('SELECT * FROM feedback WHERE suggestion_id = ?')
       .get('test-suggestion-123');
@@ -151,7 +151,7 @@ describe('Suggestion CLI Tests', () => {
     mkdirSync(projectDir, { recursive: true });
 
     // Clear analysis cache
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     db.prepare('DELETE FROM analysis_cache').run();
     db.close();
@@ -228,7 +228,7 @@ describe('Suggestion CLI Tests', () => {
     assert.match(content, /Run test command/);
 
     // Verify feedback recorded
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     const row = db.prepare('SELECT * FROM feedback WHERE suggestion_id = ?')
       .get('skill-001');
@@ -255,7 +255,7 @@ describe('Suggestion CLI Tests', () => {
     assert.match(content, /Always use strict mode in TypeScript/);
 
     // Verify feedback recorded
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     const row = db.prepare('SELECT * FROM feedback WHERE suggestion_id = ?')
       .get('claude-001');
@@ -292,7 +292,7 @@ describe('Suggestion CLI Tests', () => {
     assert.match(result, /수동 등록:/);
 
     // Verify hook file created
-    const hookFile = join(TEST_HOME, '.self-generation', 'hooks', 'auto', 'workflow-hook-001.mjs');
+    const hookFile = join(TEST_HOME, '.reflexion', 'hooks', 'auto', 'workflow-hook-001.mjs');
     assert.ok(existsSync(hookFile));
     const content = readFileSync(hookFile, 'utf-8');
     assert.match(content, /console\.log\("hook"\)/);
@@ -302,7 +302,7 @@ describe('Suggestion CLI Tests', () => {
     const projectDir = join(TEST_HOME, 'test-project');
 
     // Create a fresh hook suggestion for this test
-    const dbPath = join(TEST_HOME, '.self-generation', 'data', 'self-gen.db');
+    const dbPath = join(TEST_HOME, '.reflexion', 'data', 'reflexion.db');
     const db = new Database(dbPath);
     db.prepare('DELETE FROM analysis_cache').run();
 

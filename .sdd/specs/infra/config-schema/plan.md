@@ -12,7 +12,7 @@ status: draft
 
 ## 개요
 
-`config-schema`는 `~/.self-generation/config.json`의 전체 스키마를 중앙 정의한다. 실제 `loadConfig()`와 `isEnabled()` 함수 구현은 `lib/db.mjs`(log-writer 스펙)에 위치하며, 이 스펙은 스키마 계약과 기본값 상수를 정의하는 역할을 한다.
+`config-schema`는 `~/.reflexion/config.json`의 전체 스키마를 중앙 정의한다. 실제 `loadConfig()`와 `isEnabled()` 함수 구현은 `lib/db.mjs`(log-writer 스펙)에 위치하며, 이 스펙은 스키마 계약과 기본값 상수를 정의하는 역할을 한다.
 
 ---
 

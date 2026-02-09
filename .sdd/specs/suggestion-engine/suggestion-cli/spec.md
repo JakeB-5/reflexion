@@ -50,32 +50,32 @@ constitution_version: "2.0.0"
 #### Scenario: 유효한 제안 선택
 
 - **GIVEN** `getCachedAnalysis(168, project)`가 3개의 제안을 포함한 분석 결과를 반환할 때
-- **WHEN** 사용자가 `node ~/.self-generation/bin/apply.mjs 2`를 실행하면
+- **WHEN** 사용자가 `node ~/.reflexion/bin/apply.mjs 2`를 실행하면
 - **THEN** 2번째 제안이 선택되어 해당 유형의 적용 로직이 실행된다
 
 #### Scenario: 프로젝트 필터 지정
 
 - **GIVEN** `getCachedAnalysis(168, 'my-app')`가 유효한 분석 결과를 반환할 때
-- **WHEN** 사용자가 `node ~/.self-generation/bin/apply.mjs 1 --project my-app`을 실행하면
+- **WHEN** 사용자가 `node ~/.reflexion/bin/apply.mjs 1 --project my-app`을 실행하면
 - **THEN** `my-app` 프로젝트의 캐시된 분석 결과에서 1번째 제안이 선택된다
 
 #### Scenario: 캐시 없음
 
 - **GIVEN** `getCachedAnalysis(168, project)`가 `null`을 반환하거나 `suggestions`가 비어 있을 때
-- **WHEN** 사용자가 `node ~/.self-generation/bin/apply.mjs 1`을 실행하면
-- **THEN** "분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요." 오류 메시지를 출력하고 exit code 1로 종료한다
+- **WHEN** 사용자가 `node ~/.reflexion/bin/apply.mjs 1`을 실행하면
+- **THEN** "분석 결과가 없습니다. 먼저 node ~/.reflexion/bin/analyze.mjs 를 실행하세요." 오류 메시지를 출력하고 exit code 1로 종료한다
 
 #### Scenario: 범위 초과
 
 - **GIVEN** `getCachedAnalysis`가 3개의 제안을 반환할 때
-- **WHEN** 사용자가 `node ~/.self-generation/bin/apply.mjs 5`를 실행하면
+- **WHEN** 사용자가 `node ~/.reflexion/bin/apply.mjs 5`를 실행하면
 - **THEN** "유효한 범위: 1-3" 오류 메시지를 출력하고 exit code 1로 종료한다
 
 #### Scenario: 번호 미지정 또는 비정수
 
 - **GIVEN** 인자가 없거나 정수가 아닌 값이 전달될 때
-- **WHEN** 사용자가 `node ~/.self-generation/bin/apply.mjs`를 실행하면
-- **THEN** "사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]" 메시지를 출력하고 exit code 1로 종료한다
+- **WHEN** 사용자가 `node ~/.reflexion/bin/apply.mjs`를 실행하면
+- **THEN** "사용법: node ~/.reflexion/bin/apply.mjs <번호> [--global]" 메시지를 출력하고 exit code 1로 종료한다
 
 ---
 
@@ -141,7 +141,7 @@ constitution_version: "2.0.0"
 
 ### REQ-SE-004: 훅 워크플로우 제안 적용
 
-`type: 'hook'` 제안의 경우, 시스템은 `~/.self-generation/hooks/auto/workflow-<id>.mjs` 파일을 생성해야 한다(SHALL). 디렉터리가 없으면 재귀적으로 생성해야 한다(SHALL).
+`type: 'hook'` 제안의 경우, 시스템은 `~/.reflexion/hooks/auto/workflow-<id>.mjs` 파일을 생성해야 한다(SHALL). 디렉터리가 없으면 재귀적으로 생성해야 한다(SHALL).
 
 `suggestion.hookCode`가 존재하면 해당 코드를 파일로 저장해야 한다(SHALL). `--apply` 플래그 지정 시 `~/.claude/settings.json`에 훅을 자동 등록해야 한다(SHALL). `--apply` 없이는 등록 안내와 자동 등록 명령어를 출력해야 한다(SHOULD).
 
@@ -151,7 +151,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** `type: 'hook'`, `hookCode`가 포함된 제안이 선택되었을 때
 - **WHEN** `--apply` 플래그 없이 적용을 실행하면
-- **THEN** `hooks/auto/workflow-<id>.mjs` 파일이 생성되고, `settings.json` 등록 안내와 자동 등록 명령어(`node ~/.self-generation/bin/apply.mjs <id> --apply`)가 출력된다
+- **THEN** `hooks/auto/workflow-<id>.mjs` 파일이 생성되고, `settings.json` 등록 안내와 자동 등록 명령어(`node ~/.reflexion/bin/apply.mjs <id> --apply`)가 출력된다
 
 #### Scenario: 훅 자동 등록
 
@@ -174,14 +174,14 @@ constitution_version: "2.0.0"
 #### Scenario: 정상 거부
 
 - **GIVEN** 유효한 제안 ID `suggestion-abc-123`이 존재할 때
-- **WHEN** `node ~/.self-generation/bin/dismiss.mjs suggestion-abc-123`을 실행하면
+- **WHEN** `node ~/.reflexion/bin/dismiss.mjs suggestion-abc-123`을 실행하면
 - **THEN** `feedback` 테이블에 `{ action: 'rejected', suggestion_id: 'suggestion-abc-123', suggestion_type: 'unknown' }` 레코드가 INSERT되고, "제안 거부 기록됨: suggestion-abc-123" 확인 메시지와 "이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩니다." 안내가 출력된다
 
 #### Scenario: ID 미지정
 
 - **GIVEN** 인자 없이 실행할 때
-- **WHEN** `node ~/.self-generation/bin/dismiss.mjs`를 실행하면
-- **THEN** "사용법: node ~/.self-generation/bin/dismiss.mjs <suggestion-id>" 안내를 출력하고 exit code 1로 종료한다
+- **WHEN** `node ~/.reflexion/bin/dismiss.mjs`를 실행하면
+- **THEN** "사용법: node ~/.reflexion/bin/dismiss.mjs <suggestion-id>" 안내를 출력하고 exit code 1로 종료한다
 
 ---
 
@@ -250,7 +250,7 @@ constitution_version: "2.0.0"
 - 캐시 조회는 `getCachedAnalysis(maxAgeHours, project)` 함수를 통해 수행 (직접 SQL 접근 금지)
 - `recordFeedback()` 함수는 `feedback-tracker` 모듈에서 import
 - `insertEvent()`, `getProjectName()` 함수는 `db` 모듈에서 import
-- 데이터 접근은 `lib/db.mjs`를 통해 SQLite DB(`self-gen.db`)에서 수행한다
+- 데이터 접근은 `lib/db.mjs`를 통해 SQLite DB(`reflexion.db`)에서 수행한다
 
 ---
 

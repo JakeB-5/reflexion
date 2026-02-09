@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Self-Generation is a **prompt pattern analysis and auto-improvement system** for Claude Code. It collects user prompts, tool usage, and errors via Claude Code Hooks API, analyzes patterns using Claude in headless mode, and automatically suggests custom skills, CLAUDE.md directives, and hook workflows.
+Reflexion is a **prompt pattern analysis and auto-improvement system** for Claude Code. It collects user prompts, tool usage, and errors via Claude Code Hooks API, analyzes patterns using Claude in headless mode, and automatically suggests custom skills, CLAUDE.md directives, and hook workflows.
 
 **Target environment**: Vanilla Claude Code (no plugins/OMC required)
 
@@ -13,7 +13,7 @@ Self-Generation is a **prompt pattern analysis and auto-improvement system** for
 ## Tech Stack
 
 - **Runtime**: Node.js >= 18 (tested on v22), ES Modules (`.mjs`)
-- **Storage**: SQLite (`better-sqlite3`) + `sqlite-vec` (vector extension), single DB file (`self-gen.db`), WAL mode
+- **Storage**: SQLite (`better-sqlite3`) + `sqlite-vec` (vector extension), single DB file (`reflexion.db`), WAL mode
 - **Analysis**: Claude headless mode for semantic pattern analysis (async/background only)
 - **Embedding**: `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` (384-dim, offline)
 - **Hook system**: Claude Code Hooks API (8 events registered in `~/.claude/settings.json`)
@@ -59,13 +59,13 @@ node bin/dismiss.mjs <suggestion-id>
 | Batch analysis | Between sessions (SessionEnd → SessionStart) | Long-term pattern detection, skill/rule generation |
 | Real-time assistance | Within session | Error KB lookup, skill matching, session context |
 
-### File System Layout (`~/.self-generation/`)
+### File System Layout (`~/.reflexion/`)
 
 ```
-~/.self-generation/
+~/.reflexion/
 ├── config.json                    # System settings (enabled, collectPromptText, retentionDays, analysisModel)
 ├── data/
-│   └── self-gen.db                # SQLite DB (events, error_kb, feedback, analysis_cache, skill_embeddings)
+│   └── reflexion.db                # SQLite DB (events, error_kb, feedback, analysis_cache, skill_embeddings)
 ├── hooks/                         # 8 hook scripts (Claude Code events)
 │   ├── prompt-logger.mjs          # UserPromptSubmit: collect + skill detection (2s timeout)
 │   ├── tool-logger.mjs            # PostToolUse: tool usage + resolution detection
@@ -123,7 +123,7 @@ node bin/dismiss.mjs <suggestion-id>
 |--------|------|--------|
 | Custom skills | Repeated task patterns detected | `.claude/commands/*.md` |
 | CLAUDE.md directives | Repeated instructions detected | `.claude/CLAUDE.md` (project) or `~/.claude/CLAUDE.md` (global) |
-| Hook workflows | Repeated tool sequences detected | `~/.self-generation/hooks/auto/` |
+| Hook workflows | Repeated tool sequences detected | `~/.reflexion/hooks/auto/` |
 
 ## Key Reference Documents
 

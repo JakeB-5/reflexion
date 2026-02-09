@@ -12,7 +12,7 @@ status: draft
 
 ## 개요
 
-`bin/install.mjs`는 self-generation 시스템의 진입점이다. 디렉토리 구조 생성, 의존성 설치, 설정 초기화, 훅 등록을 자동화하여 수동 설정 15단계를 단일 명령어로 대체한다.
+`bin/install.mjs`는 reflexion 시스템의 진입점이다. 디렉토리 구조 생성, 의존성 설치, 설정 초기화, 훅 등록을 자동화하여 수동 설정 15단계를 단일 명령어로 대체한다.
 
 ---
 
@@ -43,7 +43,7 @@ status: draft
 CLI 진입점 파일 생성 및 인자 파싱
 
 **산출물:**
-- [ ] `~/.self-generation/bin/install.mjs` 파일 생성
+- [ ] `~/.reflexion/bin/install.mjs` 파일 생성
 - [ ] `process.argv` 파싱 (`--uninstall`, `--purge`)
 - [ ] 상수 정의 (`SELF_GEN_DIR`, `SETTINGS_PATH`, `HOOK_EVENTS`)
 
@@ -63,7 +63,7 @@ CLI 진입점 파일 생성 및 인자 파싱
 `--uninstall` 및 `--purge` 처리
 
 **산출물:**
-- [ ] 훅 선택적 제거 (`.self-generation` 경로 필터링)
+- [ ] 훅 선택적 제거 (`.reflexion` 경로 필터링)
 - [ ] 빈 이벤트 배열 정리
 - [ ] `--purge` 시 디렉토리 삭제
 

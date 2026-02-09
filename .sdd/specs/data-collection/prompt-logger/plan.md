@@ -39,7 +39,7 @@ status: draft
 훅 스크립트 파일 생성 및 log-writer import 설정
 
 **산출물:**
-- [ ] `~/.self-generation/hooks/prompt-logger.mjs` 파일 생성
+- [ ] `~/.reflexion/hooks/prompt-logger.mjs` 파일 생성
 - [ ] db.mjs import 및 ES Module 설정
 
 ### Phase 2: 핵심 로직

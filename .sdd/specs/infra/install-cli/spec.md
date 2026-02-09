@@ -10,7 +10,7 @@ constitution_version: "2.0.0"
 
 # install-cli
 
-> 시스템 설치/제거 CLI 스크립트 (`bin/install.mjs`). `~/.self-generation/` 디렉토리 구조 생성, `package.json` 생성 및 의존성 설치, `config.json` 초기화, `~/.claude/settings.json` 훅 등록을 자동화한다. `--uninstall` 플래그로 훅 해제 및 선택적 데이터 삭제를 지원한다. Phase 1 로드맵의 작업 0번으로, 모든 훅 스크립트 실행의 전제조건이다.
+> 시스템 설치/제거 CLI 스크립트 (`bin/install.mjs`). `~/.reflexion/` 디렉토리 구조 생성, `package.json` 생성 및 의존성 설치, `config.json` 초기화, `~/.claude/settings.json` 훅 등록을 자동화한다. `--uninstall` 플래그로 훅 해제 및 선택적 데이터 삭제를 지원한다. Phase 1 로드맵의 작업 0번으로, 모든 훅 스크립트 실행의 전제조건이다.
 
 ---
 
@@ -20,22 +20,22 @@ constitution_version: "2.0.0"
 
 | 대상 | 역할 |
 |------|------|
-| `~/.self-generation/bin/install.mjs` | 설치/제거 CLI 스크립트 |
-| `~/.self-generation/package.json` | ES Module + 의존성 선언 |
-| `~/.self-generation/config.json` | 시스템 설정 |
+| `~/.reflexion/bin/install.mjs` | 설치/제거 CLI 스크립트 |
+| `~/.reflexion/package.json` | ES Module + 의존성 선언 |
+| `~/.reflexion/config.json` | 시스템 설정 |
 | `~/.claude/settings.json` | Claude Code 훅 등록 |
 
 ### 사용법
 
 ```bash
 # 설치
-node ~/.self-generation/bin/install.mjs
+node ~/.reflexion/bin/install.mjs
 
 # 제거 (훅만 해제)
-node ~/.self-generation/bin/install.mjs --uninstall
+node ~/.reflexion/bin/install.mjs --uninstall
 
 # 완전 제거 (훅 해제 + 데이터 삭제)
-node ~/.self-generation/bin/install.mjs --uninstall --purge
+node ~/.reflexion/bin/install.mjs --uninstall --purge
 ```
 
 ### 의존 모듈
@@ -66,25 +66,25 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 ### REQ-INF-001: 디렉토리 구조 생성
 
-시스템은 `~/.self-generation/` 하위에 필요한 디렉토리 구조를 생성해야 한다(SHALL). 이미 존재하는 디렉토리는 건너뛴다(멱등성).
+시스템은 `~/.reflexion/` 하위에 필요한 디렉토리 구조를 생성해야 한다(SHALL). 이미 존재하는 디렉토리는 건너뛴다(멱등성).
 
 생성 대상 디렉토리:
-- `~/.self-generation/data/`
-- `~/.self-generation/hooks/`
-- `~/.self-generation/hooks/auto/`
-- `~/.self-generation/lib/`
-- `~/.self-generation/bin/`
-- `~/.self-generation/prompts/`
+- `~/.reflexion/data/`
+- `~/.reflexion/hooks/`
+- `~/.reflexion/hooks/auto/`
+- `~/.reflexion/lib/`
+- `~/.reflexion/bin/`
+- `~/.reflexion/prompts/`
 
 #### Scenario: 최초 설치 시 디렉토리 생성
 
-- **GIVEN** `~/.self-generation/` 디렉토리가 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/` 디렉토리가 존재하지 않는 상태
 - **WHEN** `node install.mjs`를 실행하면
 - **THEN** `data`, `hooks`, `hooks/auto`, `lib`, `bin`, `prompts` 6개 하위 디렉토리가 `mkdirSync({ recursive: true })`로 생성된다(SHALL)
 
 #### Scenario: 기존 디렉토리 존재 시 멱등성
 
-- **GIVEN** `~/.self-generation/` 디렉토리와 하위 디렉토리가 이미 존재하는 상태
+- **GIVEN** `~/.reflexion/` 디렉토리와 하위 디렉토리가 이미 존재하는 상태
 - **WHEN** `node install.mjs`를 다시 실행하면
 - **THEN** `{ recursive: true }` 옵션으로 에러 없이 완료된다(SHALL). 기존 파일은 보존된다
 
@@ -92,13 +92,13 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 ### REQ-INF-002: package.json 생성
 
-시스템은 `~/.self-generation/package.json` 파일을 생성해야 한다(SHALL). 이미 존재하면 덮어쓰지 않는다(SHALL).
+시스템은 `~/.reflexion/package.json` 파일을 생성해야 한다(SHALL). 이미 존재하면 덮어쓰지 않는다(SHALL).
 
 생성할 `package.json` 내용:
 
 ```json
 {
-  "name": "self-generation",
+  "name": "reflexion",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -112,13 +112,13 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 #### Scenario: package.json 최초 생성
 
-- **GIVEN** `~/.self-generation/package.json`이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/package.json`이 존재하지 않는 상태
 - **WHEN** `node install.mjs`를 실행하면
 - **THEN** 위 내용의 `package.json`이 생성된다(SHALL). `type: "module"`로 ES Module을 활성화하고, 3개 필수 의존성이 포함된다
 
 #### Scenario: package.json 이미 존재
 
-- **GIVEN** `~/.self-generation/package.json`이 이미 존재하는 상태
+- **GIVEN** `~/.reflexion/package.json`이 이미 존재하는 상태
 - **WHEN** `node install.mjs`를 실행하면
 - **THEN** 기존 `package.json`을 덮어쓰지 않는다(SHALL). 사용자가 수동으로 수정한 의존성 버전이 보존된다
 
@@ -130,7 +130,7 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 #### Scenario: 의존성 정상 설치
 
-- **GIVEN** `~/.self-generation/package.json`이 존재하는 상태
+- **GIVEN** `~/.reflexion/package.json`이 존재하는 상태
 - **WHEN** `execSync('npm install --production', { cwd: SELF_GEN_DIR, stdio: 'inherit' })`가 실행되면
 - **THEN** `better-sqlite3`, `sqlite-vec`, `@xenova/transformers` 패키지가 `node_modules/`에 설치된다(SHALL)
 
@@ -144,7 +144,7 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 ### REQ-INF-004: config.json 초기화
 
-시스템은 `~/.self-generation/config.json` 파일을 기본값으로 초기화해야 한다(SHALL). 이미 존재하면 덮어쓰지 않는다(SHALL).
+시스템은 `~/.reflexion/config.json` 파일을 기본값으로 초기화해야 한다(SHALL). 이미 존재하면 덮어쓰지 않는다(SHALL).
 
 기본 설정값:
 
@@ -159,13 +159,13 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 #### Scenario: config.json 최초 생성
 
-- **GIVEN** `~/.self-generation/config.json`이 존재하지 않는 상태
+- **GIVEN** `~/.reflexion/config.json`이 존재하지 않는 상태
 - **WHEN** `node install.mjs`를 실행하면
 - **THEN** 기본 설정값으로 `config.json`이 생성된다(SHALL)
 
 #### Scenario: config.json 이미 존재
 
-- **GIVEN** `~/.self-generation/config.json`이 이미 존재하는 상태
+- **GIVEN** `~/.reflexion/config.json`이 이미 존재하는 상태
 - **WHEN** `node install.mjs`를 실행하면
 - **THEN** 기존 설정을 덮어쓰지 않는다(SHALL). 사용자 커스터마이징이 보존된다
 
@@ -236,25 +236,25 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 - **GIVEN** `~/.claude/settings.json`에 이미 다른 훅(예: oh-my-claudecode 훅)이 등록된 상태
 - **WHEN** `node install.mjs`를 실행하면
-- **THEN** 기존 훅을 보존하면서 self-generation 훅을 추가 등록한다(SHALL). 기존 이벤트 배열에 push하는 방식으로 병합한다
+- **THEN** 기존 훅을 보존하면서 reflexion 훅을 추가 등록한다(SHALL). 기존 이벤트 배열에 push하는 방식으로 병합한다
 
 #### Scenario: 중복 등록 방지
 
-- **GIVEN** `settings.json`에 이미 `.self-generation` 경로를 포함하는 훅이 등록된 상태
+- **GIVEN** `settings.json`에 이미 `.reflexion` 경로를 포함하는 훅이 등록된 상태
 - **WHEN** `node install.mjs`를 다시 실행하면
-- **THEN** 해당 이벤트에 대해 중복 등록하지 않는다(SHALL). 판별 기준: hook group의 `hooks` 배열 중 하나라도 `command`에 `.self-generation` 문자열이 포함되면 이미 등록된 것으로 판단한다
+- **THEN** 해당 이벤트에 대해 중복 등록하지 않는다(SHALL). 판별 기준: hook group의 `hooks` 배열 중 하나라도 `command`에 `.reflexion` 문자열이 포함되면 이미 등록된 것으로 판단한다
 
 ---
 
 ### REQ-INF-006: 제거 모드 (--uninstall)
 
-시스템은 `--uninstall` 플래그로 실행 시 `settings.json`에서 self-generation 훅만 선택적으로 제거해야 한다(SHALL).
+시스템은 `--uninstall` 플래그로 실행 시 `settings.json`에서 reflexion 훅만 선택적으로 제거해야 한다(SHALL).
 
 #### Scenario: 훅 선택적 제거
 
-- **GIVEN** `settings.json`에 self-generation 훅과 다른 훅이 함께 등록된 상태
+- **GIVEN** `settings.json`에 reflexion 훅과 다른 훅이 함께 등록된 상태
 - **WHEN** `node install.mjs --uninstall`을 실행하면
-- **THEN** 각 이벤트의 hook group 배열에서 `command`에 `.self-generation`이 포함된 그룹만 `filter()`로 제거한다(SHALL). 다른 훅은 보존된다(SHALL). 필터링 후 빈 배열이 되면 해당 이벤트 키를 삭제한다(SHALL)
+- **THEN** 각 이벤트의 hook group 배열에서 `command`에 `.reflexion`이 포함된 그룹만 `filter()`로 제거한다(SHALL). 다른 훅은 보존된다(SHALL). 필터링 후 빈 배열이 되면 해당 이벤트 키를 삭제한다(SHALL)
 
 #### Scenario: settings.json 미존재
 
@@ -266,7 +266,7 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 - **GIVEN** `--uninstall` 플래그만 지정된 상태 (`--purge` 없음)
 - **WHEN** `node install.mjs --uninstall`을 실행하면
-- **THEN** `~/.self-generation/` 디렉토리와 데이터는 삭제하지 않는다(SHALL). 데이터 삭제 안내 메시지만 출력한다: `rm -rf ~/.self-generation`
+- **THEN** `~/.reflexion/` 디렉토리와 데이터는 삭제하지 않는다(SHALL). 데이터 삭제 안내 메시지만 출력한다: `rm -rf ~/.reflexion`
 
 ---
 
@@ -278,9 +278,9 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 #### Scenario: 훅 해제 + 데이터 삭제
 
-- **GIVEN** `settings.json`에 self-generation 훅이 등록되고 `~/.self-generation/` 디렉토리에 데이터가 존재하는 상태
+- **GIVEN** `settings.json`에 reflexion 훅이 등록되고 `~/.reflexion/` 디렉토리에 데이터가 존재하는 상태
 - **WHEN** `node install.mjs --uninstall --purge`를 실행하면
-- **THEN** REQ-INF-006의 훅 해제를 수행한 후, `~/.self-generation/` 디렉토리 전체를 `rmSync({ recursive: true, force: true })`로 삭제한다(MAY). 임베딩 데몬 소켓 파일(`/tmp/self-gen-embed.sock`)이 존재하면 `unlinkSync()`로 삭제한다(MAY)
+- **THEN** REQ-INF-006의 훅 해제를 수행한 후, `~/.reflexion/` 디렉토리 전체를 `rmSync({ recursive: true, force: true })`로 삭제한다(MAY). 임베딩 데몬 소켓 파일(`/tmp/self-gen-embed.sock`)이 존재하면 `unlinkSync()`로 삭제한다(MAY)
 
 #### Scenario: purge 단독 사용 불가
 
@@ -323,9 +323,9 @@ node ~/.self-generation/bin/install.mjs --uninstall --purge
 
 | 용어 | 정의 |
 |------|------|
-| SELF_GEN_DIR | `~/.self-generation/` — 시스템 루트 디렉토리 |
+| SELF_GEN_DIR | `~/.reflexion/` — 시스템 루트 디렉토리 |
 | SETTINGS_PATH | `~/.claude/settings.json` — Claude Code 전역 설정 파일 |
 | hook group | `settings.json`의 이벤트 배열 내 `{ hooks: [...], matcher?: string }` 객체 |
 | 멱등성 | 동일 연산을 여러 번 실행해도 결과가 같은 성질 |
 | 훅 등록 | `settings.json`에 이벤트-스크립트 매핑을 추가하는 과정 |
-| 훅 해제 | `settings.json`에서 self-generation 관련 훅 매핑을 제거하는 과정 |
+| 훅 해제 | `settings.json`에서 reflexion 관련 훅 매핑을 제거하는 과정 |

@@ -39,7 +39,7 @@ status: draft
 훅 스크립트 파일 및 의존성 설정
 
 **산출물:**
-- [ ] `~/.self-generation/hooks/error-logger.mjs` 파일 생성
+- [ ] `~/.reflexion/hooks/error-logger.mjs` 파일 생성
 - [ ] db.mjs import 설정
 
 ### Phase 2: 핵심 로직

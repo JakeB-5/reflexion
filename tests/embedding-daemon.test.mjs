@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { createConnection } from 'net';
 import { isServerRunning, embedViaServer } from '../lib/embedding-client.mjs';
 
-const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const SOCKET_PATH = '/tmp/reflexion-embed.sock';
 
 // Helper: Check if socket exists
 function socketExists() {

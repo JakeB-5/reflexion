@@ -22,7 +22,7 @@ created: 2026-02-09
 
 - [x] 서버 소켓 경로: `/tmp/self-gen-embed.sock`
 - [x] 모델명: `Xenova/paraphrase-multilingual-MiniLM-L12-v2`
-- [x] 모델 캐시: `~/.self-generation/models/`
+- [x] 모델 캐시: `~/.reflexion/models/`
 - [x] idle timeout: 30분 (1,800,000ms)
 - [x] 클라이언트 타임아웃: 10초 (10,000ms)
 - [x] health check 타임아웃: 500ms

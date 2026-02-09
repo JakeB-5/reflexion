@@ -14,7 +14,7 @@ const hookPath = join(projectRoot, 'hooks', 'prompt-logger.mjs');
 
 // Helper to setup test environment
 function setupTestEnv(testHome) {
-  const selfGenDir = join(testHome, '.self-generation');
+  const selfGenDir = join(testHome, '.reflexion');
   mkdirSync(join(selfGenDir, 'data'), { recursive: true });
 }
 
@@ -55,7 +55,7 @@ function runHookAsync(stdin, testHome) {
 
 // Helper to query events from test DB
 function queryEvents(testHome, type) {
-  const dbPath = join(testHome, '.self-generation', 'data', 'self-gen.db');
+  const dbPath = join(testHome, '.reflexion', 'data', 'reflexion.db');
   const db = new Database(dbPath);
   const rows = db.prepare(`
     SELECT * FROM events WHERE type = ? ORDER BY ts DESC
@@ -100,7 +100,7 @@ test('prompt-logger - basic prompt recording (REQ-DC-101)', async () => {
 
 test('prompt-logger - collectPromptText=false → [REDACTED] (REQ-DC-102)', async () => {
   const testHome = join(tmpdir(), `prompt-logger-test-${Date.now()}`);
-  const selfGenDir = join(testHome, '.self-generation');
+  const selfGenDir = join(testHome, '.reflexion');
   mkdirSync(selfGenDir, { recursive: true });
 
   // Write config with collectPromptText=false
@@ -170,7 +170,7 @@ Run /deploy
   // so matchSkill falls through to keyword matching
   const { createServer } = await import('net');
   const { unlinkSync, existsSync: exists } = await import('fs');
-  const SOCKET = '/tmp/self-gen-embed.sock';
+  const SOCKET = '/tmp/reflexion-embed.sock';
   try { if (exists(SOCKET)) unlinkSync(SOCKET); } catch {}
 
   const server = createServer((conn) => {
@@ -204,7 +204,7 @@ Run /deploy
   try { unlinkSync(SOCKET); } catch {}
 
   assert.equal(result.exitCode, 0);
-  assert.ok(result.stdout.includes('[Self-Generation]'), `stdout should include [Self-Generation], got: ${result.stdout.slice(0, 200)}`);
+  assert.ok(result.stdout.includes('[Reflexion]'), `stdout should include [Reflexion], got: ${result.stdout.slice(0, 200)}`);
   assert.ok(result.stdout.includes('/deploy'));
   assert.ok(result.stdout.includes('프로젝트'));
 
@@ -238,7 +238,7 @@ Run /docker-build
   // Create mock embedding server for fast keyword fallback
   const { createServer } = await import('net');
   const { unlinkSync, existsSync: exists } = await import('fs');
-  const SOCKET = '/tmp/self-gen-embed.sock';
+  const SOCKET = '/tmp/reflexion-embed.sock';
   try { if (exists(SOCKET)) unlinkSync(SOCKET); } catch {}
 
   const server = createServer((conn) => {
@@ -376,7 +376,7 @@ test('prompt-logger - invalid JSON stdin → exit 0 (REQ-DC-106)', () => {
 
 test('prompt-logger - system disabled → no event (REQ-DC-106)', async () => {
   const testHome = join(tmpdir(), `prompt-logger-test-${Date.now()}`);
-  const selfGenDir = join(testHome, '.self-generation');
+  const selfGenDir = join(testHome, '.reflexion');
   const dataDir = join(selfGenDir, 'data');
   mkdirSync(dataDir, { recursive: true });
 
@@ -397,7 +397,7 @@ test('prompt-logger - system disabled → no event (REQ-DC-106)', async () => {
   assert.equal(result.exitCode, 0);
 
   // Check if DB file was created (it should not be if system is disabled)
-  const dbPath = join(dataDir, 'self-gen.db');
+  const dbPath = join(dataDir, 'reflexion.db');
   const { existsSync } = await import('fs');
   if (existsSync(dbPath)) {
     const events = await queryEvents(testHome, 'prompt');

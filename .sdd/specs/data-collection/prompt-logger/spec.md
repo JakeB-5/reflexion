@@ -112,7 +112,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** `skill_embeddings` 테이블에 스킬 임베딩이 존재하고, 프롬프트와 distance < 0.76인 스킬이 있는 상태
 - **WHEN** `matchSkill(input.prompt, skills)`가 벡터 매칭 결과를 반환하면
-- **THEN** stdout으로 `{ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[Self-Generation] 이 작업과 관련된 커스텀 스킬이 있습니다: /<name> (전역/프로젝트 스킬)\n사용자에게 이 스킬 사용을 제안해주세요.' } }`를 출력(SHALL)한다
+- **THEN** stdout으로 `{ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[Reflexion] 이 작업과 관련된 커스텀 스킬이 있습니다: /<name> (전역/프로젝트 스킬)\n사용자에게 이 스킬 사용을 제안해주세요.' } }`를 출력(SHALL)한다
 
 ### Scenario: 키워드 폴백 매칭
 

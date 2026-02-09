@@ -10,18 +10,18 @@ import { tmpdir } from 'os';
 import Database from 'better-sqlite3';
 
 const projectRoot = process.cwd();
-const TEST_HOME = join(tmpdir(), `self-gen-e2e-test-${Date.now()}`);
-const SELF_GEN_DIR = join(TEST_HOME, '.self-generation');
+const TEST_HOME = join(tmpdir(), `reflexion-e2e-test-${Date.now()}`);
+const REFLEXION_DIR = join(TEST_HOME, '.reflexion');
 const CLAUDE_DIR = join(TEST_HOME, '.claude');
 const SETTINGS_PATH = join(CLAUDE_DIR, 'settings.json');
-const DB_PATH = join(SELF_GEN_DIR, 'data', 'self-gen.db');
+const DB_PATH = join(REFLEXION_DIR, 'data', 'reflexion.db');
 const INSTALL_SCRIPT = join(projectRoot, 'bin', 'install.mjs');
 
 // --- Helper functions ---
 
 function runInstall(args = '') {
   return execSync(`node ${INSTALL_SCRIPT} ${args}`, {
-    env: { ...process.env, HOME: TEST_HOME, SELF_GEN_SKIP_NPM: '1' },
+    env: { ...process.env, HOME: TEST_HOME, REFLEXION_SKIP_NPM: '1' },
     encoding: 'utf-8',
     timeout: 30000
   });
@@ -67,11 +67,11 @@ describe('E2E Integration Test', () => {
   it('1. Clean install creates correct structure', () => {
     // Verify 5 directories exist
     for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
-      assert.ok(existsSync(join(SELF_GEN_DIR, dir)), `${dir} should exist`);
+      assert.ok(existsSync(join(REFLEXION_DIR, dir)), `${dir} should exist`);
     }
 
     // Verify config.json has 4 fields
-    const config = readJSON(join(SELF_GEN_DIR, 'config.json'));
+    const config = readJSON(join(REFLEXION_DIR, 'config.json'));
     assert.equal(config.enabled, true);
     assert.equal(config.collectPromptText, true);
     assert.equal(config.retentionDays, 90);
@@ -345,7 +345,7 @@ describe('E2E Integration Test', () => {
   it('8. Privacy: collectPromptText=false redacts prompts', () => {
     // Write config with collectPromptText: false
     writeFileSync(
-      join(SELF_GEN_DIR, 'config.json'),
+      join(REFLEXION_DIR, 'config.json'),
       JSON.stringify({
         enabled: true,
         collectPromptText: false,
@@ -373,7 +373,7 @@ describe('E2E Integration Test', () => {
 
     // Restore config
     writeFileSync(
-      join(SELF_GEN_DIR, 'config.json'),
+      join(REFLEXION_DIR, 'config.json'),
       JSON.stringify({
         enabled: true,
         collectPromptText: true,
@@ -430,7 +430,7 @@ describe('E2E Integration Test', () => {
   it('11. System disabled skips recording', () => {
     // Write config with enabled: false
     writeFileSync(
-      join(SELF_GEN_DIR, 'config.json'),
+      join(REFLEXION_DIR, 'config.json'),
       JSON.stringify({
         enabled: false,
         collectPromptText: true,
@@ -456,7 +456,7 @@ describe('E2E Integration Test', () => {
 
     // Restore config
     writeFileSync(
-      join(SELF_GEN_DIR, 'config.json'),
+      join(REFLEXION_DIR, 'config.json'),
       JSON.stringify({
         enabled: true,
         collectPromptText: true,
@@ -491,17 +491,17 @@ describe('E2E Integration Test', () => {
   it('13. Uninstall removes hooks but keeps data', () => {
     runInstall('--uninstall');
 
-    // Verify settings.json has no self-generation hooks
+    // Verify settings.json has no reflexion hooks
     const settings = readJSON(SETTINGS_PATH);
     for (const event of Object.keys(settings.hooks)) {
-      const selfGenGroups = settings.hooks[event].filter(
-        g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+      const reflexionGroups = settings.hooks[event].filter(
+        g => g.hooks?.some(h => h.command?.includes('.reflexion'))
       );
-      assert.equal(selfGenGroups.length, 0, `${event} should have no self-gen hooks`);
+      assert.equal(reflexionGroups.length, 0, `${event} should have no reflexion hooks`);
     }
 
     // Verify data directory still exists
-    assert.ok(existsSync(SELF_GEN_DIR), 'data directory should still exist');
+    assert.ok(existsSync(REFLEXION_DIR), 'data directory should still exist');
     assert.ok(existsSync(DB_PATH), 'database should still exist');
   });
 
@@ -516,7 +516,7 @@ describe('E2E Integration Test', () => {
     // Now uninstall with purge
     runInstall('--uninstall --purge');
 
-    // Verify ~/.self-generation/ directory is gone
-    assert.ok(!existsSync(SELF_GEN_DIR), 'data directory should be deleted');
+    // Verify ~/.reflexion/ directory is gone
+    assert.ok(!existsSync(REFLEXION_DIR), 'data directory should be deleted');
   });
 });

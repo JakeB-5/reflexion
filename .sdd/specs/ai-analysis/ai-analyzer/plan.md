@@ -15,12 +15,12 @@ domain: ai-analysis
 ## Phase 1: 기반 구축
 
 ### 1.1 프롬프트 템플릿 생성
-- `~/.self-generation/prompts/analyze.md` 템플릿 파일 생성
+- `~/.reflexion/prompts/analyze.md` 템플릿 파일 생성
 - 플레이스홀더: `{{days}}`, `{{project}}`, `{{log_data}}`, `{{feedback_history}}`, `{{existing_skills}}`, `{{outcome_metrics}}`
 - DESIGN.md 5.2절의 템플릿을 그대로 구현
 
 ### 1.2 모듈 스캐폴딩
-- `~/.self-generation/lib/ai-analyzer.mjs` 파일 생성
+- `~/.reflexion/lib/ai-analyzer.mjs` 파일 생성
 - 상수 정의: `GLOBAL_DIR`, `CACHE_FILE`, `PROMPT_TEMPLATE`
 - 의존 모듈 import: `log-writer.mjs`, `feedback-tracker.mjs`, `skill-matcher.mjs`
 

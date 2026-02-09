@@ -20,8 +20,8 @@ constitution_version: "2.0.0"
 
 ### 파일 위치
 
-- 모듈: `~/.self-generation/lib/error-kb.mjs`
-- 데이터: `~/.self-generation/data/self-gen.db` (`error_kb` 테이블)
+- 모듈: `~/.reflexion/lib/error-kb.mjs`
+- 데이터: `~/.reflexion/data/reflexion.db` (`error_kb` 테이블)
 
 ### error_kb 테이블 스키마
 
@@ -162,7 +162,7 @@ QMD의 Strong-signal shortcut 패턴을 차용한 3단계 검색 전략 (우선�
 
 #### Scenario RA-002-5: DB 부재 시
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않는 환경
+- **GIVEN** `reflexion.db` 파일이 존재하지 않는 환경
 - **WHEN** `searchErrorKB(normalizedError)`를 호출하면
 - **THEN** `null`을 반환한다
 
@@ -209,7 +209,7 @@ ON CONFLICT(error_normalized) DO UPDATE SET
 
 #### Scenario RA-003-3: DB가 아직 없을 때
 
-- **GIVEN** `self-gen.db` 파일이 존재하지 않는 환경
+- **GIVEN** `reflexion.db` 파일이 존재하지 않는 환경
 - **WHEN** `recordResolution()`을 호출하면
 - **THEN** DB와 테이블이 자동 생성되고 엔트리가 기록된다
 
@@ -297,7 +297,7 @@ ON CONFLICT(error_normalized) DO UPDATE SET
 - `better-sqlite3` 패키지를 사용하여 SQLite 접근 (SHALL)
 - `sqlite-vec` 확장을 로드하여 벡터 연산 수행 (SHALL)
 - `normalizeError()`는 이 모듈이 단일 소유자(Single Owner)이며, 다른 모듈은 이 모듈에서 import하여 사용 (SHALL)
-- DB 경로: `~/.self-generation/data/self-gen.db` (SHALL)
+- DB 경로: `~/.reflexion/data/reflexion.db` (SHALL)
 - 임베딩 차원: 384 (float 배열) (SHALL)
 - 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 유틸리티 사용 (SHALL) — Transformers.js `paraphrase-multilingual-MiniLM-L12-v2` 모델 기반, async 함수
 

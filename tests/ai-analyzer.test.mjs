@@ -9,10 +9,10 @@ import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 
 // Override HOME to temp directory for isolated testing
-const TEST_HOME = join(tmpdir(), `self-gen-test-${Date.now()}`);
+const TEST_HOME = join(tmpdir(), `reflexion-test-${Date.now()}`);
 process.env.HOME = TEST_HOME;
 
-const GLOBAL_DIR = join(TEST_HOME, '.self-generation');
+const GLOBAL_DIR = join(TEST_HOME, '.reflexion');
 const DATA_DIR = join(GLOBAL_DIR, 'data');
 const PROMPTS_DIR = join(GLOBAL_DIR, 'prompts');
 
@@ -24,7 +24,7 @@ async function setupTestEnv() {
   // Create minimal config.json
   writeFileSync(join(GLOBAL_DIR, 'config.json'), JSON.stringify({
     enabled: true,
-    dbPath: join(DATA_DIR, 'self-gen.db')
+    dbPath: join(DATA_DIR, 'reflexion.db')
   }));
 
   // Create minimal analyze.md template

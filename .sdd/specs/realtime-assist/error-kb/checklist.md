@@ -121,7 +121,7 @@
 - [ ] `better-sqlite3` 패키지 사용
 - [ ] `sqlite-vec` 확장 로드
 - [ ] `normalizeError()`는 error-kb 모듈이 단일 소유자 (Single Owner)
-- [ ] DB 경로: `~/.self-generation/data/self-gen.db`
+- [ ] DB 경로: `~/.reflexion/data/reflexion.db`
 - [ ] 임베딩 차원: 384 (float 배열)
 - [ ] 임베딩 생성에 `db.mjs`의 `generateEmbeddings()` 사용 (Transformers.js 기반, async)
 

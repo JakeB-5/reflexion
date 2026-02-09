@@ -1,6 +1,6 @@
 # SDD Workflow Guide
 
-> **self-generation** - AI 에이전트 워크플로우 지침서
+> **reflexion** - AI 에이전트 워크플로우 지침서
 
 ---
 
@@ -31,7 +31,7 @@
 
 ## 프로젝트 개요
 
-**프로젝트**: self-generation
+**프로젝트**: reflexion
 **설명**: (프로젝트 설명을 추가하세요)
 
 ---

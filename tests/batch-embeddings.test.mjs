@@ -19,7 +19,7 @@ function setupTestEnv() {
   if (existsSync(TEST_HOME)) {
     rmSync(TEST_HOME, { recursive: true, force: true });
   }
-  mkdirSync(join(TEST_HOME, '.self-generation', 'data'), { recursive: true });
+  mkdirSync(join(TEST_HOME, '.reflexion', 'data'), { recursive: true });
   mkdirSync(join(TEST_HOME, '.claude', 'commands'), { recursive: true });
 
   resetDb();

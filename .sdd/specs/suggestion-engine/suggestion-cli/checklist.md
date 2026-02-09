@@ -10,9 +10,9 @@
 ### REQ-SE-001: CLI 인자 파싱 및 제안 조회
 - [ ] `<suggestion-number>`, `--global`, `--project`, `--apply` 플래그 파싱 구현
 - [ ] `getCachedAnalysis(168, project)` 호출로 7일 TTL 캐시 조회
-- [ ] 캐시 없음/제안 비어있음 시 "분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요." 오류 출력 및 exit 1
+- [ ] 캐시 없음/제안 비어있음 시 "분석 결과가 없습니다. 먼저 node ~/.reflexion/bin/analyze.mjs 를 실행하세요." 오류 출력 및 exit 1
 - [ ] 제안 번호 범위 초과 시 "유효한 범위: 1-N" 오류 출력 및 exit 1
-- [ ] 번호 미지정/비정수 시 "사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]" 출력 및 exit 1
+- [ ] 번호 미지정/비정수 시 "사용법: node ~/.reflexion/bin/apply.mjs <번호> [--global]" 출력 및 exit 1
 
 ### REQ-SE-002: 스킬 제안 적용
 - [ ] `type: 'skill'` 제안 시 `.claude/commands/<skillName>.md` 파일 생성
@@ -30,7 +30,7 @@
 - [ ] 대상 디렉터리 없으면 재귀 생성
 
 ### REQ-SE-004: 훅 워크플로우 제안 적용
-- [ ] `type: 'hook'` 제안 시 `~/.self-generation/hooks/auto/workflow-<id>.mjs` 파일 생성
+- [ ] `type: 'hook'` 제안 시 `~/.reflexion/hooks/auto/workflow-<id>.mjs` 파일 생성
 - [ ] 디렉터리 없으면 재귀 생성
 - [ ] `suggestion.hookCode` 존재하면 파일로 저장
 - [ ] `--apply` 플래그 지정 시 `~/.claude/settings.json`에 훅 자동 등록 (기존 settings.json 구조 보존)
@@ -42,7 +42,7 @@
 - [ ] `bin/dismiss.mjs`가 `recordFeedback(id, 'rejected', { suggestionType: 'unknown' })` 호출
 - [ ] 거부 확인 메시지 출력: "제안 거부 기록됨: <id>"
 - [ ] 향후 AI 분석 제외 안내 출력: "이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩니다."
-- [ ] ID 미지정 시 "사용법: node ~/.self-generation/bin/dismiss.mjs <suggestion-id>" 출력 및 exit 1
+- [ ] ID 미지정 시 "사용법: node ~/.reflexion/bin/dismiss.mjs <suggestion-id>" 출력 및 exit 1
 
 ### REQ-SE-006: 피드백 기록 연동
 - [ ] 모든 적용(apply) 성공 시 `recordFeedback(id, 'accepted', { suggestionType, summary })` 호출
@@ -92,7 +92,7 @@
 - [ ] `--global` vs 프로젝트 범위 파일 위치 검증
 
 ### 훅 워크플로우 적용 테스트
-- [ ] 훅 스크립트 파일 생성 (`~/.self-generation/hooks/auto/workflow-<id>.mjs`) 검증
+- [ ] 훅 스크립트 파일 생성 (`~/.reflexion/hooks/auto/workflow-<id>.mjs`) 검증
 - [ ] `--apply` 없이 실행 시 수동 등록 안내 출력 검증
 - [ ] `--apply`로 `settings.json` 자동 등록 (기존 구조 보존) 검증
 - [ ] hookCode 미포함 시 경고 메시지 출력 검증

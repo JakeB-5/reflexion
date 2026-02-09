@@ -11,9 +11,9 @@ import Database from 'better-sqlite3';
 // Each test gets a unique HOME to avoid cross-test contamination
 function getTestPaths(testName) {
   const TEST_HOME = join(process.cwd(), `test-home-session-summary-${testName}`);
-  const GLOBAL_DIR = join(TEST_HOME, '.self-generation');
+  const GLOBAL_DIR = join(TEST_HOME, '.reflexion');
   const DATA_DIR = join(GLOBAL_DIR, 'data');
-  const DB_PATH = join(DATA_DIR, 'self-gen.db');
+  const DB_PATH = join(DATA_DIR, 'reflexion.db');
   return { TEST_HOME, GLOBAL_DIR, DATA_DIR, DB_PATH };
 }
 

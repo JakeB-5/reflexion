@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ~/.self-generation/bin/apply.mjs
+// ~/.reflexion/bin/apply.mjs
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
@@ -14,13 +14,13 @@ const projectIdx = args.indexOf('--project');
 const project = projectIdx !== -1 ? args[projectIdx + 1] : basename(process.cwd());
 
 if (isNaN(num)) {
-  console.error('사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]');
+  console.error('사용법: node ~/.reflexion/bin/apply.mjs <번호> [--global]');
   process.exit(1);
 }
 
 const analysis = getCachedAnalysis(168, project);
 if (!analysis || !analysis.suggestions?.length) {
-  console.error('분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요.');
+  console.error('분석 결과가 없습니다. 먼저 node ~/.reflexion/bin/analyze.mjs 를 실행하세요.');
   process.exit(1);
 }
 
@@ -40,7 +40,7 @@ switch (suggestion.type) {
     applyClaudeMd(suggestion);
     break;
   case 'hook': {
-    const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
+    const GLOBAL_DIR = join(process.env.HOME, '.reflexion');
     const hookDir = join(GLOBAL_DIR, 'hooks', 'auto');
     mkdirSync(hookDir, { recursive: true });
     const hookFile = join(hookDir, `workflow-${suggestion.id}.mjs`);
@@ -53,7 +53,7 @@ switch (suggestion.type) {
       } else {
         console.log(`\n수동 등록: ~/.claude/settings.json에 다음을 추가하세요:`);
         console.log(`  "${suggestion.hookEvent || 'PostToolUse'}": ["${hookFile}"]`);
-        console.log(`\n또는 자동 등록: node ~/.self-generation/bin/apply.mjs ${num} --apply`);
+        console.log(`\n또는 자동 등록: node ~/.reflexion/bin/apply.mjs ${num} --apply`);
       }
     } else {
       console.log('⚠️  훅 코드 미생성 — 프롬프트 템플릿에 hookCode 필드를 요청하세요');

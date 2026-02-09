@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ~/.self-generation/bin/install.mjs
+// ~/.reflexion/bin/install.mjs
 // Usage: node install.mjs [--uninstall [--purge]]
 // v9: Automated install/uninstall script
 
@@ -9,9 +9,9 @@ import { execSync } from 'child_process';
 import { homedir } from 'os';
 
 const HOME = homedir();
-const SELF_GEN_DIR = join(HOME, '.self-generation');
+const REFLEXION_DIR = join(HOME, '.reflexion');
 const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
-const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const SOCKET_PATH = '/tmp/reflexion-embed.sock';
 const isUninstall = process.argv.includes('--uninstall');
 const isPurge = process.argv.includes('--purge');
 
@@ -39,7 +39,7 @@ if (isUninstall) {
       for (const event of Object.keys(HOOK_EVENTS)) {
         if (settings.hooks[event]) {
           settings.hooks[event] = settings.hooks[event].filter(
-            group => !group.hooks?.some(h => h.command?.includes('.self-generation'))
+            group => !group.hooks?.some(h => h.command?.includes('.reflexion'))
           );
           if (settings.hooks[event].length === 0) delete settings.hooks[event];
         }
@@ -47,19 +47,19 @@ if (isUninstall) {
       writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
     }
   }
-  console.log('✅ self-generation 훅이 settings.json에서 제거되었습니다.');
+  console.log('✅ reflexion 훅이 settings.json에서 제거되었습니다.');
 
   if (isPurge) {
     // Full removal: delete data directory and socket file
-    if (existsSync(SELF_GEN_DIR)) {
-      rmSync(SELF_GEN_DIR, { recursive: true, force: true });
+    if (existsSync(REFLEXION_DIR)) {
+      rmSync(REFLEXION_DIR, { recursive: true, force: true });
     }
     if (existsSync(SOCKET_PATH)) {
       unlinkSync(SOCKET_PATH);
     }
     console.log('🗑️  데이터 디렉토리와 소켓 파일이 삭제되었습니다.');
   } else {
-    console.log(`   데이터 삭제: rm -rf ${SELF_GEN_DIR}`);
+    console.log(`   데이터 삭제: rm -rf ${REFLEXION_DIR}`);
   }
 
   process.exit(0);
@@ -69,14 +69,14 @@ if (isUninstall) {
 
 // 1. Create directory structure
 for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
-  mkdirSync(join(SELF_GEN_DIR, dir), { recursive: true });
+  mkdirSync(join(REFLEXION_DIR, dir), { recursive: true });
 }
 console.log('📁 디렉토리 구조 생성 완료');
 
 // 2. Initialize package.json and install dependencies
-if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
-  writeFileSync(join(SELF_GEN_DIR, 'package.json'), JSON.stringify({
-    name: 'self-generation',
+if (!existsSync(join(REFLEXION_DIR, 'package.json'))) {
+  writeFileSync(join(REFLEXION_DIR, 'package.json'), JSON.stringify({
+    name: 'reflexion',
     version: '0.1.0',
     type: 'module',
     private: true,
@@ -90,20 +90,20 @@ if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
 console.log('📦 package.json 확인 완료');
 
 // Skip npm install in test/CI environments
-if (!process.env.SELF_GEN_SKIP_NPM) {
+if (!process.env.REFLEXION_SKIP_NPM) {
   try {
-    execSync('npm install --production', { cwd: SELF_GEN_DIR, stdio: 'inherit' });
+    execSync('npm install --production', { cwd: REFLEXION_DIR, stdio: 'inherit' });
     console.log('📦 의존성 설치 완료');
   } catch (e) {
     console.error('❌ 의존성 설치 실패:', e.message);
     process.exit(1);
   }
 } else {
-  console.log('📦 의존성 설치 건너뜀 (SELF_GEN_SKIP_NPM)');
+  console.log('📦 의존성 설치 건너뜀 (REFLEXION_SKIP_NPM)');
 }
 
 // 3. Initialize config.json
-const configPath = join(SELF_GEN_DIR, 'config.json');
+const configPath = join(REFLEXION_DIR, 'config.json');
 if (!existsSync(configPath)) {
   writeFileSync(configPath, JSON.stringify({
     enabled: true,
@@ -124,7 +124,7 @@ if (!settings.hooks) settings.hooks = {};
 for (const [event, config] of Object.entries(HOOK_EVENTS)) {
   const hookEntry = {
     type: 'command',
-    command: `node ${join(SELF_GEN_DIR, 'hooks', config.script)}`,
+    command: `node ${join(REFLEXION_DIR, 'hooks', config.script)}`,
     timeout: config.timeout
   };
   const group = { hooks: [hookEntry] };
@@ -133,7 +133,7 @@ for (const [event, config] of Object.entries(HOOK_EVENTS)) {
   // Avoid duplicate registration
   if (!settings.hooks[event]) settings.hooks[event] = [];
   const alreadyRegistered = settings.hooks[event].some(
-    g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+    g => g.hooks?.some(h => h.command?.includes('.reflexion'))
   );
   if (!alreadyRegistered) settings.hooks[event].push(group);
 }
@@ -141,4 +141,4 @@ for (const [event, config] of Object.entries(HOOK_EVENTS)) {
 writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 console.log('🔗 settings.json에 훅 등록 완료');
 
-console.log('\n✅ self-generation 설치가 완료되었습니다.');
+console.log('\n✅ reflexion 설치가 완료되었습니다.');

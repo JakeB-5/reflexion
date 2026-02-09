@@ -22,8 +22,8 @@ pre-tool-guide는 도구 실행 전에 과거 학습 데이터를 기반으로 �
 
 ### 파일 위치
 
-- 훅 스크립트: `~/.self-generation/hooks/pre-tool-guide.mjs`
-- 의존 데이터: `~/.self-generation/data/self-gen.db` (`events` 테이블, `error_kb` 테이블)
+- 훅 스크립트: `~/.reflexion/hooks/pre-tool-guide.mjs`
+- 의존 데이터: `~/.reflexion/data/reflexion.db` (`events` 테이블, `error_kb` 테이블)
 
 ### 훅 등록
 
@@ -34,7 +34,7 @@ pre-tool-guide는 도구 실행 전에 과거 학습 데이터를 기반으로 �
       "matcher": "Edit|Write|Bash|Task",
       "hooks": [{
         "type": "command",
-        "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs"
+        "command": "node $HOME/.reflexion/hooks/pre-tool-guide.mjs"
       }]
     }]
   }
@@ -195,7 +195,7 @@ pre-tool-guide는 도구 실행 전에 과거 학습 데이터를 기반으로 �
 
 #### Scenario RA-305-1: DB 접근 실패 시
 
-- **GIVEN** `self-gen.db` 파일이 손상되어 접근 불가
+- **GIVEN** `reflexion.db` 파일이 손상되어 접근 불가
 - **WHEN** pre-tool-guide.mjs가 실행되면
 - **THEN** exit code 0으로 정상 종료한다
 

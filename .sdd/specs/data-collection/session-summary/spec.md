@@ -176,6 +176,6 @@ constitution_version: "2.0.0"
 - AI 분석 트리거: `import { runAnalysisAsync } from '../lib/ai-analyzer.mjs'`
 - DB 정리: `import { pruneOldEvents } from '../lib/db.mjs'` — session-summary에서 10% 확률로 호출
 - `toolSequence`는 워크플로우 패턴 분석에 활용 (예: Read→Edit→Bash 반복 패턴 감지)
-- 배치 임베딩 스크립트 경로: `~/.self-generation/lib/batch-embeddings.mjs`
+- 배치 임베딩 스크립트 경로: `~/.reflexion/lib/batch-embeddings.mjs`
 - 배치 임베딩 스크립트는 10초 딜레이 후 실행하여 DB 쓰기 경합을 줄인다 (WAL + busy_timeout으로 최종 보장)
 - 저장소가 JSONL에서 SQLite `events` 테이블로 변경됨. `db.mjs`의 `insertEvent()`와 `queryEvents()`를 사용한다

@@ -1,8 +1,8 @@
 [English](SETUP.md)
 
-# Self-Generation 설정 및 사용 가이드
+# Reflexion 설정 및 사용 가이드
 
-Self-Generation은 Claude Code 사용 패턴을 자동으로 수집하고 분석하여, 반복되는 작업을 커스텀 스킬, CLAUDE.md 지침, 훅 워크플로우로 자동 개선하는 시스템입니다. 이 가이드는 설치부터 사용, 문제 해결까지 모든 단계를 다룹니다.
+Reflexion은 Claude Code 사용 패턴을 자동으로 수집하고 분석하여, 반복되는 작업을 커스텀 스킬, CLAUDE.md 지침, 훅 워크플로우로 자동 개선하는 시스템입니다. 이 가이드는 설치부터 사용, 문제 해결까지 모든 단계를 다룹니다.
 
 ---
 
@@ -22,7 +22,7 @@ Self-Generation은 Claude Code 사용 패턴을 자동으로 수집하고 분석
 
 ### Node.js 버전
 
-Self-Generation은 Node.js의 `better-sqlite3` 네이티브 바인딩을 사용합니다. 버전 호환성이 중요합니다.
+Reflexion은 Node.js의 `better-sqlite3` 네이티브 바인딩을 사용합니다. 버전 호환성이 중요합니다.
 
 **필수**: Node.js v22 (또는 v18, v20)
 **주의**: Node.js v24는 better-sqlite3 네이티브 빌드 실패 — 피하세요
@@ -104,7 +104,7 @@ ok - All tests passed
 ### Step 3: 시스템 설치
 
 ```bash
-# Self-Generation 시스템 설치
+# Reflexion 시스템 설치
 node bin/install.mjs
 
 # 출력 예:
@@ -118,13 +118,13 @@ node bin/install.mjs
 
 #### 생성되는 디렉토리 구조
 
-설치 후 `~/.self-generation/` 디렉토리가 생성됩니다:
+설치 후 `~/.reflexion/` 디렉토리가 생성됩니다:
 
 ```
-~/.self-generation/
+~/.reflexion/
 ├── config.json                 # 시스템 설정
 ├── data/
-│   └── self-gen.db            # 데이터베이스 (SQLite)
+│   └── reflexion.db            # 데이터베이스 (SQLite)
 ├── hooks/                      # 8개 훅 스크립트
 │   ├── prompt-logger.mjs       # UserPromptSubmit 이벤트
 │   ├── tool-logger.mjs         # PostToolUse 이벤트
@@ -168,14 +168,14 @@ node bin/install.mjs
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "node ~/.self-generation/hooks/prompt-logger.mjs",
+        "command": "node ~/.reflexion/hooks/prompt-logger.mjs",
         "timeout": 5
       }
     ],
     "PostToolUse": [
       {
         "type": "command",
-        "command": "node ~/.self-generation/hooks/tool-logger.mjs",
+        "command": "node ~/.reflexion/hooks/tool-logger.mjs",
         "timeout": 5
       }
     ],
@@ -188,10 +188,10 @@ node bin/install.mjs
 
 ```bash
 # config.json 확인
-cat ~/.self-generation/config.json
+cat ~/.reflexion/config.json
 
 # DB 초기화 확인
-ls -lh ~/.self-generation/data/self-gen.db
+ls -lh ~/.reflexion/data/reflexion.db
 
 # 훅 등록 확인
 grep -A 5 "UserPromptSubmit" ~/.claude/settings.json
@@ -199,7 +199,7 @@ grep -A 5 "UserPromptSubmit" ~/.claude/settings.json
 
 예상 출력:
 ```bash
-$ cat ~/.self-generation/config.json
+$ cat ~/.reflexion/config.json
 {
   "enabled": true,
   "collectPromptText": true,
@@ -207,15 +207,15 @@ $ cat ~/.self-generation/config.json
   "analysisModel": "claude-sonnet-4-5-20250929"
 }
 
-$ ls -lh ~/.self-generation/data/self-gen.db
--rw-r--r--  1 user  staff  131K Feb  9 12:34 ~/.self-generation/data/self-gen.db
+$ ls -lh ~/.reflexion/data/reflexion.db
+-rw-r--r--  1 user  staff  131K Feb  9 12:34 ~/.reflexion/data/reflexion.db
 ```
 
 ---
 
 ## 3. 설정 (config.json)
 
-Self-Generation은 `~/.self-generation/config.json` 파일로 설정됩니다.
+Reflexion은 `~/.reflexion/config.json` 파일로 설정됩니다.
 
 ### 기본 설정 파일 내용
 
@@ -239,12 +239,12 @@ Self-Generation은 `~/.self-generation/config.json` 파일로 설정됩니다.
 
 ```bash
 # 시스템 일시 중지
-jq '.enabled = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.enabled = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # 시스템 재개
-jq '.enabled = true' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.enabled = true' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `collectPromptText` (boolean, 기본값: true)
@@ -256,8 +256,8 @@ jq '.enabled = true' ~/.self-generation/config.json | \
 
 프라이버시가 중요한 경우:
 ```bash
-jq '.collectPromptText = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `retentionDays` (숫자, 기본값: 90)
@@ -266,12 +266,12 @@ jq '.collectPromptText = false' ~/.self-generation/config.json | \
 
 ```bash
 # 180일로 변경
-jq '.retentionDays = 180' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 180' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # 영구 보관 (999999)
-jq '.retentionDays = 999999' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 999999' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### `analysisModel` (문자열, 기본값: claude-sonnet-4-5-20250929)
@@ -285,22 +285,22 @@ AI 패턴 분석에 사용할 Claude 모델을 지정합니다. 더 강력한 �
 
 ```bash
 # 더 정확한 분석 (Opus)
-jq '.analysisModel = "claude-opus-4-6"' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.analysisModel = "claude-opus-4-6"' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # 빠른 분석 (Haiku)
-jq '.analysisModel = "claude-haiku-4-5-20251001"' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.analysisModel = "claude-haiku-4-5-20251001"' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 ### 설정 변경 확인
 
 ```bash
 # 현재 설정 보기
-cat ~/.self-generation/config.json
+cat ~/.reflexion/config.json
 
 # JSON 유효성 검증
-jq . ~/.self-generation/config.json
+jq . ~/.reflexion/config.json
 ```
 
 ---
@@ -329,10 +329,10 @@ jq . ~/.self-generation/config.json
 
 ```bash
 # 기본 분석 (최근 30일)
-node ~/.self-generation/bin/analyze.mjs
+node ~/.reflexion/bin/analyze.mjs
 
 # 분석 결과 예시:
-# === Self-Generation AI 패턴 분석 (최근 30일) ===
+# === Reflexion AI 패턴 분석 (최근 30일) ===
 #
 # --- 반복 프롬프트 클러스터 ---
 #
@@ -361,20 +361,20 @@ node ~/.self-generation/bin/analyze.mjs
 #    제안: CLAUDE.md에 "테스트 실패 시 먼저 npm install 실행" 추가
 #
 # ---
-# 제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <번호>
+# 제안을 적용하려면: node ~/.reflexion/bin/apply.mjs <번호>
 ```
 
 #### 분석 옵션
 
 ```bash
 # 최근 60일 분석
-node ~/.self-generation/bin/analyze.mjs --days 60
+node ~/.reflexion/bin/analyze.mjs --days 60
 
 # 특정 프로젝트만 분석
-node ~/.self-generation/bin/analyze.mjs --project-path /path/to/project
+node ~/.reflexion/bin/analyze.mjs --project-path /path/to/project
 
 # 특정 프로젝트 (이름 기반)
-node ~/.self-generation/bin/analyze.mjs --project my-project
+node ~/.reflexion/bin/analyze.mjs --project my-project
 ```
 
 ### 제안 적용
@@ -387,13 +387,13 @@ node ~/.self-generation/bin/analyze.mjs --project my-project
 
 ```bash
 # 제안 1번 적용 (스킬)
-node ~/.self-generation/bin/apply.mjs 1
+node ~/.reflexion/bin/apply.mjs 1
 
 # 출력 예:
 # 스킬 생성: /Users/user/.claude/commands/ts-init.md
 
 # 프로젝트 범위 스킬 생성
-node ~/.self-generation/bin/apply.mjs 1 --project my-project
+node ~/.reflexion/bin/apply.mjs 1 --project my-project
 
 # 생성된 스킬 확인
 cat ~/.claude/commands/ts-init.md
@@ -424,7 +424,7 @@ TypeScript 프로젝트를 초기화합니다:
 
 ```bash
 # 제안 2번 적용 (CLAUDE.md)
-node ~/.self-generation/bin/apply.mjs 2
+node ~/.reflexion/bin/apply.mjs 2
 
 # 출력 예:
 # CLAUDE.md 업데이트: /Users/user/.claude/CLAUDE.md
@@ -433,7 +433,7 @@ node ~/.self-generation/bin/apply.mjs 2
 cat ~/.claude/CLAUDE.md
 
 # 프로젝트 범위 규칙 적용
-node ~/.self-generation/bin/apply.mjs 2 --project my-project
+node ~/.reflexion/bin/apply.mjs 2 --project my-project
 
 # 생성 위치:
 # 프로젝트 범위: /path/to/project/.claude/CLAUDE.md
@@ -454,18 +454,18 @@ node ~/.self-generation/bin/apply.mjs 2 --project my-project
 
 ```bash
 # 제안 3번 적용 (훅)
-node ~/.self-generation/bin/apply.mjs 3
+node ~/.reflexion/bin/apply.mjs 3
 
 # 출력 예:
-# ✅ 훅 스크립트 생성됨: ~/.self-generation/hooks/auto/workflow-xxxxx.mjs
+# ✅ 훅 스크립트 생성됨: ~/.reflexion/hooks/auto/workflow-xxxxx.mjs
 #
 # 수동 등록: ~/.claude/settings.json에 다음을 추가하세요:
-#   "PostToolUse": ["~/.self-generation/hooks/auto/workflow-xxxxx.mjs"]
+#   "PostToolUse": ["~/.reflexion/hooks/auto/workflow-xxxxx.mjs"]
 #
-# 또는 자동 등록: node ~/.self-generation/bin/apply.mjs 3 --apply
+# 또는 자동 등록: node ~/.reflexion/bin/apply.mjs 3 --apply
 
 # 자동으로 settings.json에 등록
-node ~/.self-generation/bin/apply.mjs 3 --apply
+node ~/.reflexion/bin/apply.mjs 3 --apply
 
 # 등록 확인
 cat ~/.claude/settings.json | jq '.hooks.PostToolUse'
@@ -477,7 +477,7 @@ cat ~/.claude/settings.json | jq '.hooks.PostToolUse'
 
 ```bash
 # 제안 ID로 거부
-node ~/.self-generation/bin/dismiss.mjs "suggestion-abc123"
+node ~/.reflexion/bin/dismiss.mjs "suggestion-abc123"
 
 # 출력 예:
 # 제안 거부 기록됨: suggestion-abc123
@@ -490,7 +490,7 @@ node ~/.self-generation/bin/dismiss.mjs "suggestion-abc123"
 
 ```bash
 # SQLite CLI로 DB 검사
-sqlite3 ~/.self-generation/data/self-gen.db
+sqlite3 ~/.reflexion/data/reflexion.db
 
 # DB 셀 프롬프트에서:
 sqlite> SELECT COUNT(*) as event_count FROM events;
@@ -511,7 +511,7 @@ node ~/self-generation/bin/install.mjs --uninstall
 
 # 출력 예:
 # ✅ self-generation 훅이 settings.json에서 제거되었습니다.
-#    데이터 삭제: rm -rf ~/.self-generation
+#    데이터 삭제: rm -rf ~/.reflexion
 
 # 확인
 grep -c "self-generation" ~/.claude/settings.json  # 0 또는 라인 수 없음
@@ -521,27 +521,27 @@ grep -c "self-generation" ~/.claude/settings.json  # 0 또는 라인 수 없음
 
 ```bash
 # 훅 제거 + 모든 데이터 삭제
-node ~/.self-generation/bin/install.mjs --uninstall --purge
+node ~/.reflexion/bin/install.mjs --uninstall --purge
 
 # 출력 예:
 # ✅ self-generation 훅이 settings.json에서 제거되었습니다.
 # 🗑️  데이터 디렉토리와 소켓 파일이 삭제되었습니다.
 
 # 확인
-ls ~/.self-generation  # 디렉토리 없음 (또는 empty)
+ls ~/.reflexion  # 디렉토리 없음 (또는 empty)
 ```
 
 ### 수동 정리
 
 ```bash
 # 훅 제거 (보관)
-rm -rf ~/.self-generation/hooks/
+rm -rf ~/.reflexion/hooks/
 
 # DB만 삭제
-rm ~/.self-generation/data/self-gen.db*
+rm ~/.reflexion/data/reflexion.db*
 
 # 전체 삭제
-rm -rf ~/.self-generation/
+rm -rf ~/.reflexion/
 
 # settings.json에서 self-generation 훅 수동 제거
 # (편집기에서 ~/.claude/settings.json 열기 → self-generation 관련 항목 삭제)
@@ -595,13 +595,13 @@ npm install
 grep -l "self-generation" ~/.claude/settings.json
 
 # 2. enabled 설정 확인
-jq '.enabled' ~/.self-generation/config.json  # true여야 함
+jq '.enabled' ~/.reflexion/config.json  # true여야 함
 
 # 3. 훅 스크립트 존재 확인
-ls -la ~/.self-generation/hooks/
+ls -la ~/.reflexion/hooks/
 
 # 4. 다시 설치
-node ~/.self-generation/bin/install.mjs --uninstall
+node ~/.reflexion/bin/install.mjs --uninstall
 node ~/self-generation/bin/install.mjs
 
 # 5. Claude Code 재시작 (매우 중요!)
@@ -616,21 +616,21 @@ sqlite error: database is locked
 ```
 
 #### 원인
-여러 훅이 동시에 DB에 접근할 때 발생합니다. Self-Generation은 WAL(Write-Ahead Logging) 모드를 사용하여 이를 방지합니다.
+여러 훅이 동시에 DB에 접근할 때 발생합니다. Reflexion은 WAL(Write-Ahead Logging) 모드를 사용하여 이를 방지합니다.
 
 #### 해결
 
 ```bash
 # WAL 모드 확인
-sqlite3 ~/.self-generation/data/self-gen.db "PRAGMA journal_mode;"
+sqlite3 ~/.reflexion/data/reflexion.db "PRAGMA journal_mode;"
 # 결과: wal
 
 # DB 파일이 손상된 경우, 재초기화
-rm ~/.self-generation/data/self-gen.db*
-node ~/.self-generation/bin/install.mjs
+rm ~/.reflexion/data/reflexion.db*
+node ~/.reflexion/bin/install.mjs
 
 # 또는 전체 재설치
-rm -rf ~/.self-generation/
+rm -rf ~/.reflexion/
 node ~/self-generation/bin/install.mjs
 ```
 
@@ -651,7 +651,7 @@ Error: connect ENOENT /tmp/self-gen-embed.sock
 ls -la /tmp/self-gen-embed.sock
 
 # 데몬 로그 확인 (있는 경우)
-tail -20 ~/.self-generation/logs/daemon.log
+tail -20 ~/.reflexion/logs/daemon.log
 
 # 재시작
 kill $(lsof -t /tmp/self-gen-embed.sock) 2>/dev/null
@@ -729,19 +729,19 @@ npm install -g @anthropic-ai/sdk
 # 1. 훅 동작 확인 (위 "훅이 동작하지 않을 때" 참고)
 
 # 2. enabled 확인
-jq '.enabled' ~/.self-generation/config.json
+jq '.enabled' ~/.reflexion/config.json
 
 # 3. 강제 테스트 이벤트 생성
 # Claude Code에서 간단한 작업 10번 반복 (Bash, Read, Edit 등)
 # 또는 프로그래밍 방식으로:
 node -e "
-const db = require('better-sqlite3')('~/.self-generation/data/self-gen.db');
+const db = require('better-sqlite3')('~/.reflexion/data/reflexion.db');
 const count = db.prepare('SELECT COUNT(*) as cnt FROM events').get().cnt;
 console.log('Events:', count);
 "
 
 # 4. 분석 재실행
-node ~/.self-generation/bin/analyze.mjs --days 1
+node ~/.reflexion/bin/analyze.mjs --days 1
 ```
 
 ---
@@ -750,17 +750,17 @@ node ~/.self-generation/bin/analyze.mjs --days 1
 
 ### 모든 데이터는 로컬에 저장됩니다
 
-Self-Generation은 완전히 로컬에서 작동합니다. 수집된 데이터는 절대로 외부 서버로 전송되지 않습니다.
+Reflexion은 완전히 로컬에서 작동합니다. 수집된 데이터는 절대로 외부 서버로 전송되지 않습니다.
 
 ```bash
 # 데이터 위치 확인
-ls -la ~/.self-generation/data/
+ls -la ~/.reflexion/data/
 
 # 파일 크기
-du -h ~/.self-generation/
+du -h ~/.reflexion/
 
 # 데이터 백업
-cp -r ~/.self-generation ~/.self-generation.backup
+cp -r ~/.reflexion ~/.reflexion.backup
 ```
 
 ### 민감 정보 자동 보호
@@ -805,11 +805,11 @@ cp -r ~/.self-generation ~/.self-generation.backup
 
 ```bash
 # 프롬프트 수집 비활성화
-jq '.collectPromptText = false' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 
 # 확인
-jq '.collectPromptText' ~/.self-generation/config.json  # false
+jq '.collectPromptText' ~/.reflexion/config.json  # false
 ```
 
 이 설정이 활성화되면:
@@ -830,26 +830,26 @@ jq '.collectPromptText' ~/.self-generation/config.json  # false
 
 ```bash
 # 현재 보존 기간 확인
-jq '.retentionDays' ~/.self-generation/config.json
+jq '.retentionDays' ~/.reflexion/config.json
 
 # 30일로 단축
-jq '.retentionDays = 30' ~/.self-generation/config.json | \
-  tee ~/.self-generation/config.json
+jq '.retentionDays = 30' ~/.reflexion/config.json | \
+  tee ~/.reflexion/config.json
 ```
 
 #### 수동 삭제
 
 ```bash
 # 특정 프로젝트 데이터만 삭제
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events WHERE project_path = '/path/to/project';"
 
 # 특정 날짜 이전 모든 데이터 삭제
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events WHERE ts < '2025-01-09T00:00:00Z';"
 
 # 전체 삭제
-sqlite3 ~/.self-generation/data/self-gen.db \
+sqlite3 ~/.reflexion/data/reflexion.db \
   "DELETE FROM events; VACUUM;"
 ```
 
@@ -857,22 +857,22 @@ sqlite3 ~/.self-generation/data/self-gen.db \
 
 #### 1. 파일 권한
 
-Self-Generation 디렉토리는 자동으로 적절한 권한으로 생성됩니다.
+Reflexion 디렉토리는 자동으로 적절한 권한으로 생성됩니다.
 
 ```bash
 # 권한 확인 (사용자만 읽기/쓰기 가능해야 함)
-ls -ld ~/.self-generation
+ls -ld ~/.reflexion
 # 예상: drwx------ (700)
 
 # 필요시 권한 설정
-chmod 700 ~/.self-generation
-chmod 700 ~/.self-generation/data
-chmod 600 ~/.self-generation/data/self-gen.db
+chmod 700 ~/.reflexion
+chmod 700 ~/.reflexion/data
+chmod 600 ~/.reflexion/data/reflexion.db
 ```
 
 #### 2. 네트워크 안전성
 
-Self-Generation은 네트워크 통신이 필요합니다:
+Reflexion은 네트워크 통신이 필요합니다:
 
 - **Claude API 호출**: Claude 헤드리스 모드 실행 시만 (AI 분석 시점)
 - **모델 다운로드**: 첫 실행 시 ONNX 임베딩 모델 다운로드 (120MB)
@@ -884,7 +884,7 @@ Self-Generation은 네트워크 통신이 필요합니다:
 
 ```bash
 # 임베딩 모델 캐시 위치
-ls -la ~/.self-generation/models/
+ls -la ~/.reflexion/models/
 ```
 
 ---
@@ -905,29 +905,29 @@ npm install
 node bin/install.mjs
 
 # 분석 (30일 기본)
-node ~/.self-generation/bin/analyze.mjs
-node ~/.self-generation/bin/analyze.mjs --days 60
-node ~/.self-generation/bin/analyze.mjs --project-path /path/to/project
+node ~/.reflexion/bin/analyze.mjs
+node ~/.reflexion/bin/analyze.mjs --days 60
+node ~/.reflexion/bin/analyze.mjs --project-path /path/to/project
 
 # 제안 적용
-node ~/.self-generation/bin/apply.mjs 1          # 제안 1 적용
-node ~/.self-generation/bin/apply.mjs 1 --apply  # 훅 자동 등록
+node ~/.reflexion/bin/apply.mjs 1          # 제안 1 적용
+node ~/.reflexion/bin/apply.mjs 1 --apply  # 훅 자동 등록
 
 # 제안 거부
-node ~/.self-generation/bin/dismiss.mjs "id"
+node ~/.reflexion/bin/dismiss.mjs "id"
 
 # 제거
 node bin/install.mjs --uninstall                 # 훅만 제거
 node bin/install.mjs --uninstall --purge         # 전체 삭제
 
 # 설정 수정
-jq '.enabled = false' ~/.self-generation/config.json | tee ~/.self-generation/config.json
-jq '.collectPromptText = false' ~/.self-generation/config.json | tee ~/.self-generation/config.json
-jq '.retentionDays = 180' ~/.self-generation/config.json | tee ~/.self-generation/config.json
+jq '.enabled = false' ~/.reflexion/config.json | tee ~/.reflexion/config.json
+jq '.collectPromptText = false' ~/.reflexion/config.json | tee ~/.reflexion/config.json
+jq '.retentionDays = 180' ~/.reflexion/config.json | tee ~/.reflexion/config.json
 
 # 데이터 확인
-sqlite3 ~/.self-generation/data/self-gen.db "SELECT COUNT(*) FROM events;"
-cat ~/.self-generation/config.json | jq .
+sqlite3 ~/.reflexion/data/reflexion.db "SELECT COUNT(*) FROM events;"
+cat ~/.reflexion/config.json | jq .
 ```
 
 ### FAQ
@@ -945,8 +945,8 @@ A: 더 많은 데이터가 필요합니다 (최소 30개 이벤트 권장). 또�
 A: 아니오. 동일한 이름의 스킬이 존재하면 새 스킬 생성을 건너뜁니다.
 
 **Q: 데이터를 다른 컴퓨터로 옮길 수 있나요?**
-A: 네. `~/.self-generation/data/self-gen.db`를 복사하면 됩니다. DB는 자체 포함되어 있습니다.
+A: 네. `~/.reflexion/data/reflexion.db`를 복사하면 됩니다. DB는 자체 포함되어 있습니다.
 
 ---
 
-**이 가이드는 Self-Generation v0.1.0을 기준으로 작성되었습니다. (2026-02-09)**
+**이 가이드는 Reflexion v0.1.0을 기준으로 작성되었습니다. (2026-02-09)**

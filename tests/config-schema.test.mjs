@@ -11,8 +11,8 @@ import { tmpdir } from 'os';
 import { execSync } from 'child_process';
 
 const TEST_HOME = join(tmpdir(), `config-test-${Date.now()}`);
-const SELF_GEN_DIR = join(TEST_HOME, '.self-generation');
-const CONFIG_PATH = join(SELF_GEN_DIR, 'config.json');
+const REFLEXION_DIR = join(TEST_HOME, '.reflexion');
+const CONFIG_PATH = join(REFLEXION_DIR, 'config.json');
 
 // Helper to run a script that imports and tests db.mjs functions
 function runInSubprocess(code) {
@@ -42,7 +42,7 @@ function evalConfig(expr) {
 
 describe('config-schema', () => {
   beforeEach(() => {
-    mkdirSync(SELF_GEN_DIR, { recursive: true });
+    mkdirSync(REFLEXION_DIR, { recursive: true });
   });
 
   afterEach(() => {
@@ -122,7 +122,7 @@ describe('config-schema', () => {
       assert.equal(constants.DEFAULT_EMBEDDING_DIMENSIONS, 384);
       assert.equal(constants.DEFAULT_EMBEDDING_THRESHOLD, 0.76);
       assert.equal(constants.DEFAULT_BATCH_SIZE, 50);
-      assert.equal(constants.DEFAULT_SOCKET_PATH, '/tmp/self-gen-embed.sock');
+      assert.equal(constants.DEFAULT_SOCKET_PATH, '/tmp/reflexion-embed.sock');
       assert.equal(constants.DEFAULT_IDLE_TIMEOUT_MINUTES, 30);
       assert.equal(constants.DEFAULT_CLIENT_TIMEOUT_MS, 10000);
     });

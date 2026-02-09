@@ -1,4 +1,4 @@
-// ~/.self-generation/hooks/pre-tool-guide.mjs
+// ~/.reflexion/hooks/pre-tool-guide.mjs
 // PreToolUse hook — provides proactive guidance based on error KB history
 
 import { getDb, readStdin, isEnabled } from '../lib/db.mjs';
