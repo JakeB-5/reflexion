@@ -17,9 +17,9 @@ updated: 2026-02-07
 
 ### 2. 전역 우선, 프로젝트 필터링
 
-- 모든 이벤트는 하나의 전역 `prompt-log.jsonl`에 기록해야 한다(SHALL)
-- 각 이벤트에 `project`(표시용)와 `projectPath`(정규 식별자) 필드를 포함해야 한다(SHALL)
-- 프로젝트별 필터링은 `projectPath` 기반으로 수행해야 한다(SHALL)
+- 모든 이벤트는 단일 SQLite DB(`self-gen.db`)의 `events` 테이블에 기록해야 한다(SHALL)
+- 각 이벤트에 `project`(표시용)와 `project_path`(정규 식별자) 필드를 포함해야 한다(SHALL)
+- 프로젝트별 필터링은 `project_path` 기반 SQL 쿼리로 수행해야 한다(SHALL)
 
 ### 3. 프라이버시 보호
 
@@ -31,7 +31,7 @@ updated: 2026-02-07
 
 ### 4. 스키마 버전 관리
 
-- 모든 JSONL 엔트리에 `v` 필드를 포함해야 한다(SHALL)
+- 모든 DB 엔트리에 `v` 필드를 포함해야 한다(SHALL)
 - 스키마 변경 시 버전을 증가시켜야 한다(SHALL)
 
 ### 5. 품질 우선
@@ -45,10 +45,12 @@ updated: 2026-02-07
 - 스펙은 RFC 2119 키워드를 사용해야 한다(SHALL)
 - 모든 요구사항은 GIVEN-WHEN-THEN 시나리오를 포함해야 한다(SHALL)
 
-### 7. 제로 의존성
+### 7. 최소 의존성
 
-- 외부 npm 패키지를 사용해서는 안 된다(SHALL NOT)
-- Node.js 내장 모듈(`fs`, `path`, `child_process` 등)만 사용해야 한다(SHALL)
+- 외부 npm 패키지는 최소한으로 제한해야 한다(SHALL)
+- 허용된 필수 패키지 3개: `better-sqlite3` (SQLite 바인딩), `sqlite-vec` (벡터 검색 확장), `@xenova/transformers` (오프라인 임베딩)
+- 위 3개 이외의 외부 패키지를 추가해서는 안 된다(SHALL NOT)
+- Node.js 내장 모듈(`fs`, `path`, `child_process` 등)을 우선 사용해야 한다(SHALL)
 
 ## 금지 사항
 
@@ -60,7 +62,8 @@ updated: 2026-02-07
 ## 기술 스택
 
 - **런타임**: Node.js >= 18 (ES Modules, `.mjs`)
-- **저장소**: JSONL (append-only), 50MB 로테이션, 90일 보관
+- **저장소**: SQLite (`better-sqlite3`) + `sqlite-vec` (벡터 확장), 단일 DB 파일 (`self-gen.db`), WAL 모드
+- **임베딩**: `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` (384차원, 오프라인)
 - **분석**: `claude --print` (AI 의미 기반 분석)
 - **훅 시스템**: Claude Code Hooks API (`~/.claude/settings.json`)
 - **설정**: JSON (`~/.self-generation/config.json`)

@@ -56,10 +56,21 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 | 항목 | 선택 | 이유 |
 |------|------|------|
 | 런타임 | Node.js (>=18) | Claude Code가 이미 Node.js 환경 |
-| 저장소 | JSONL (append-only) | 외부 의존성 없음, 간단, 충분한 성능 |
+| 저장소 | SQLite + sqlite-vec | WAL 모드로 동시성 안전, 벡터 유사도 검색 지원 |
+| DB 바인딩 | `better-sqlite3` | 동기 API, 네이티브 성능, Node.js 최적 |
+| 벡터 확장 | `sqlite-vec` | SQLite 벡터 유사도 검색 확장 (float[384]) |
+| 임베딩 모델 | `@xenova/transformers` + `paraphrase-multilingual-MiniLM-L12-v2` | 384차원 다국어 임베딩, 오프라인 실행, 2.4ms/건 |
 | 훅 시스템 | Claude Code Hooks API | 바닐라 Claude Code 내장 기능 |
-| 분석 | `claude --print` (AI 에이전트) | 의미 기반 분석, 한국어/영어 완벽 지원 |
+| 분석 | `claude --print` (AI 에이전트) | 패턴 분석 + 제안 생성 (임베딩은 Transformers.js) |
 | 설정 | JSON | Claude Code settings.json과 동일 패턴 |
+
+> **의존성 정책 변경**: 초기 설계의 "외부 npm 패키지 제로" 정책에서 "최소 의존성" 정책으로 전환.
+> `better-sqlite3`, `sqlite-vec`, `@xenova/transformers` 3개 패키지를 사용하며, 인덱스 기반 쿼리 성능,
+> WAL 모드 동시성, 벡터 유사도 검색, 오프라인 임베딩 등의 이점이 의존성 추가를 정당화한다.
+
+> **시스템 요구사항**: `better-sqlite3`는 네이티브 C++ 애드온으로 빌드 도구가 필요하다.
+> macOS: Xcode Command Line Tools (`xcode-select --install`), Linux: `build-essential` 패키지.
+> `@xenova/transformers`는 첫 실행 시 ONNX 모델을 ~120MB 다운로드한다 (이후 로컬 캐시).
 
 ---
 
@@ -122,13 +133,13 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │                                                                  │
 │  ┌─── 실시간 어시스턴스 (Phase 5) ───────────────────────────┐   │
 │  │                                                           │   │
-│  │  User Prompt ──→ [UserPromptSubmit] ──┬→ prompt-log.jsonl │   │
+│  │  User Prompt ──→ [UserPromptSubmit] ──┬→ self-gen.db      │   │
 │  │                                       └→ 스킬 자동 감지    │   │
-│  │                                          (기존 스킬 매칭)  │   │
+│  │                                          (벡터 스킬 매칭)  │   │
 │  │                                                           │   │
-│  │  Tool Error  ──→ [PostToolUseFailure] ─┬→ prompt-log.jsonl│   │
+│  │  Tool Error  ──→ [PostToolUseFailure] ─┬→ self-gen.db     │   │
 │  │                                        └→ 에러 KB 검색    │   │
-│  │                                           (즉시 해결 제안) │   │
+│  │                                           (벡터 유사도)    │   │
 │  │                                                           │   │
 │  │  Subagent   ──→ [SubagentStop] ──→ 성능 메트릭 기록       │   │
 │  │                                                           │   │
@@ -136,17 +147,19 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │                                                                  │
 │  ┌─── 배치 분석 (Phase 2) ───────────────────────────────────┐   │
 │  │                                                           │   │
-│  │  Tool Usage  ──→ [PostToolUse] ──→ prompt-log.jsonl       │   │
+│  │  Tool Usage  ──→ [PostToolUse] ──→ self-gen.db             │   │
 │  │                                                           │   │
-│  │  Session End ──→ [SessionEnd] ──┬→ prompt-log.jsonl       │   │
-│  │                                 └→ claude --print 분석    │   │
-│  │                                     (비동기 백그라운드)     │   │
-│  │                                          │                │   │
-│  │                                          ▼                │   │
-│  │                                  analysis-cache.json      │   │
+│  │  Session End ──→ [SessionEnd] ──┬→ self-gen.db            │   │
+│  │                                 ├→ claude --print 분석    │   │
+│  │                                 │   (비동기 백그라운드)     │   │
+│  │                                 │        │                │   │
+│  │                                 │        ▼                │   │
+│  │                                 │  analysis_cache 테이블   │   │
+│  │                                 └→ 배치 임베딩 생성 (Transformers.js) │   │
 │  │                                                           │   │
-│  │  Session Start ──→ [SessionStart] ──→ 캐시 주입           │   │
+│  │  Session Start ──→ [SessionStart] ──→ DB 캐시 주입        │   │
 │  │                                  ──→ 이전 세션 컨텍스트    │   │
+│  │                                  ──→ 임베딩 데몬 시작     │   │
 │  │                                                           │   │
 │  └───────────────────────────────────────────────────────────┘   │
 │                                                                  │
@@ -171,25 +184,28 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 |----------|------|------|
 | Prompt Logger | 프롬프트/도구/에러 이벤트 수집 | Hook 스크립트 |
 | AI Analyzer | `claude --print`로 패턴 분석 + 제안 생성 | SessionEnd 훅 (비동기) |
-| Analysis Cache | AI 분석 결과 저장, SessionStart에서 주입 | analysis-cache.json |
-| Error KB | 에러 해결 이력 저장 + 실시간 검색 | error-kb.jsonl |
-| Skill Matcher | 기존 스킬과 프롬프트 실시간 매칭 | UserPromptSubmit 훅 |
+| Analysis Cache | AI 분석 결과 저장, SessionStart에서 주입 | `analysis_cache` 테이블 (SQLite) |
+| Error KB | 에러 해결 이력 저장 + 벡터 유사도 검색 | `error_kb` 테이블 (SQLite + sqlite-vec) |
+| Skill Matcher | 기존 스킬과 프롬프트 벡터 매칭 | `skill_embeddings` 테이블 + UserPromptSubmit 훅 |
+| Embedding Daemon | Transformers.js 모델 상주 프로세스, Unix socket 서버 | SessionStart에서 자동 시작, 비활성 30분 후 자동 종료 |
 | Subagent Tracker | 서브에이전트 성능 메트릭 추적 | SubagentStop 훅 |
-| Feedback Tracker | 제안 채택/거부 추적 | JSONL 로그 |
+| Feedback Tracker | 제안 채택/거부 추적 | `feedback` 테이블 (SQLite) |
 
 ### 파일 시스템 구조
 
 모든 데이터와 스크립트는 `~/.self-generation/`에 전역으로 관리된다.
-프로젝트별 분리가 아닌 **하나의 로그에 모든 세션을 기록**하고, 각 이벤트에 `project` 필드를 포함하여 프로젝트별 필터링이 가능하다.
+프로젝트별 분리가 아닌 **하나의 DB에 모든 세션을 기록**하고, 각 이벤트에 `project` 필드를 포함하여 프로젝트별 필터링이 가능하다.
 
 ```
 ~/.self-generation/                ← 전역 시스템 루트
 ├── config.json                    ← 시스템 설정
 ├── data/
-│   ├── prompt-log.jsonl           ← 전역 수집 로그 (모든 프로젝트, 모든 세션)
-│   ├── feedback.jsonl             ← 제안 채택/거부 기록
-│   ├── analysis-cache.json        ← AI 분석 결과 캐시
-│   └── error-kb.jsonl             ← 에러 해결 이력 KB (실시간 검색용)
+│   └── self-gen.db                ← SQLite DB (WAL 모드, 모든 데이터 통합)
+│       ├── events                 ← 전역 이벤트 로그 (prompt, tool_use, tool_error, ...)
+│       ├── error_kb               ← 에러 해결 이력 + 벡터 임베딩
+│       ├── feedback               ← 제안 채택/거부 기록
+│       ├── analysis_cache         ← AI 분석 결과 캐시
+│       └── skill_embeddings       ← 스킬 벡터 임베딩
 ├── hooks/
 │   ├── prompt-logger.mjs          ← UserPromptSubmit 훅 (수집 + 스킬 자동 감지)
 │   ├── tool-logger.mjs            ← PostToolUse 훅
@@ -201,11 +217,14 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 │   ├── subagent-context.mjs       ← SubagentStart 훅 (컨텍스트 주입, v7)
 │   └── auto/                      ← AI가 생성한 워크플로우 훅 (v7)
 ├── lib/
-│   ├── log-writer.mjs             ← JSONL 읽기/쓰기 유틸
+│   ├── db.mjs                     ← SQLite DB 연결/쿼리 유틸 (WAL, sqlite-vec)
 │   ├── ai-analyzer.mjs            ← claude --print 기반 AI 분석 실행
-│   ├── error-kb.mjs               ← 에러 KB 검색/기록
-│   ├── skill-matcher.mjs          ← 기존 스킬과 프롬프트 매칭
-│   └── feedback-tracker.mjs       ← 피드백 추적
+│   ├── error-kb.mjs               ← 에러 KB 벡터 검색/기록
+│   ├── skill-matcher.mjs          ← 벡터 기반 스킬-프롬프트 매칭
+│   ├── embedding-server.mjs       ← 임베딩 데몬 (Transformers.js 상주 프로세스)
+│   ├── embedding-client.mjs       ← 임베딩 클라이언트 (훅용 소켓 통신)
+│   ├── feedback-tracker.mjs       ← 피드백 추적
+│   └── batch-embeddings.mjs       ← Detached 배치 임베딩 프로세서
 ├── prompts/
 │   └── analyze.md                 ← AI 분석 프롬프트 템플릿
 └── bin/
@@ -226,8 +245,8 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 ```
 
 **설계 원칙: 전역 우선, 프로젝트 필터링**
-- 수집: 모든 프로젝트의 이벤트가 하나의 `prompt-log.jsonl`에 기록
-- 각 이벤트에 `project` 필드 (프로젝트 디렉토리명) 포함
+- 수집: 모든 프로젝트의 이벤트가 하나의 `self-gen.db` → `events` 테이블에 기록
+- 각 이벤트에 `project`, `project_path` 필드 포함 (인덱스 기반 빠른 필터링)
 - 분석: 전역 패턴 (크로스-프로젝트) + 프로젝트별 패턴 모두 감지
 - 제안: 범용 패턴 → `~/.claude/` 전역 적용, 프로젝트 특화 → `<project>/.claude/` 적용
 
@@ -297,7 +316,7 @@ Claude Code를 사용하면서 사용자는 무의식적으로 동일한 패턴�
 ```
 
 **설계 원칙:**
-- 모든 수집 훅은 **non-blocking** (exit code 0, 빠른 완료)
+- 모든 수집 훅은 **non-blocking** (exit code 0, 빠른 완료, 임베딩은 데몬 소켓 통신으로 ~5ms, 배치 임베딩은 detached 프로세스로 분리)
 - 훅 실패가 Claude Code 세션에 영향을 주지 않음
 
 #### API 필드 검증 결과
@@ -317,22 +336,215 @@ Claude Code 공식 문서 대조를 통해 설계에 사용된 모든 API 필드
 | SessionEnd `reason` 필드 | v7 P8에서 활용 | 존재 (clear, logout, ...) | OK |
 | SessionStart `source` 필드 | v7 P7에서 활용 | 존재 (startup, resume, ...) | OK |
 
-### 4.2 공통 유틸: JSONL 읽기/쓰기
+### 4.2 공통 유틸: SQLite DB 모듈
+
+> **설계 변경 (v8)**: `lib/log-writer.mjs` (JSONL 기반)를 `lib/db.mjs` (SQLite + sqlite-vec)로 교체.
+> 인덱스 기반 쿼리, WAL 모드 동시성, 벡터 유사도 검색을 지원한다.
 
 ```javascript
-// ~/.self-generation/lib/log-writer.mjs
-import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync, renameSync, readdirSync, unlinkSync, openSync, readSync, closeSync } from 'fs';
-import { join, dirname } from 'path';
-
-const MAX_FILE_SIZE = 50_000_000; // 50MB
-const RETENTION_DAYS = 90;
+// ~/.self-generation/lib/db.mjs
+import Database from 'better-sqlite3';
+import * as sqliteVec from 'sqlite-vec';
+import { mkdirSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+import { execSync } from 'child_process';
 
 const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
 const DATA_DIR = join(GLOBAL_DIR, 'data');
+const DB_PATH = join(DATA_DIR, 'self-gen.db');
+const RETENTION_DAYS = 90;
 
-export function getLogFile() {
+let _db = null;
+
+/**
+ * DB 연결 싱글턴 (WAL 모드, sqlite-vec 로드)
+ * 모든 훅과 모듈에서 getDb()로 동일 연결 공유
+ */
+export function getDb() {
+  if (_db) return _db;
+
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  return join(DATA_DIR, 'prompt-log.jsonl');
+
+  _db = new Database(DB_PATH);
+  _db.pragma('journal_mode = WAL');
+  _db.pragma('busy_timeout = 5000');
+
+  // sqlite-vec 확장 로드 (벡터 검색이 필요한 훅에서만 로드하면 이상적이나,
+  // 어떤 훅이 벡터 검색을 사용할지 사전에 알 수 없으므로 일괄 로드)
+  sqliteVec.load(_db);
+
+  // Skip DDL if tables already exist (saves ~5-10ms per hook invocation)
+  // Check both regular tables and vec0 virtual tables
+  const eventsExists = _db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='events'"
+  ).get();
+  const vecExists = _db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='vec_error_kb'"
+  ).get();
+  if (!eventsExists || !vecExists) initDb(_db);
+
+  // v8→v9 migration: add input_hash column to analysis_cache if missing
+  migrateV9(_db);
+
+  return _db;
+}
+
+/**
+ * DB 스키마 초기화 (CREATE IF NOT EXISTS)
+ */
+export function initDb(db) {
+  db.exec(`
+    -- Events table (replaces prompt-log.jsonl)
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      v INTEGER DEFAULT 1,
+      type TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      project TEXT,
+      project_path TEXT,
+      data JSON NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_events_project_type ON events(project_path, type, ts);
+    CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
+    CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, type);
+
+    -- Error KB table (replaces error-kb.jsonl) with vector column
+    CREATE TABLE IF NOT EXISTS error_kb (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL,
+      error_normalized TEXT NOT NULL,
+      error_raw TEXT,
+      resolution TEXT,
+      resolved_by TEXT,
+      tool_sequence TEXT,
+      use_count INTEGER DEFAULT 0,
+      last_used TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
+
+    -- Feedback table (replaces feedback.jsonl)
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      v INTEGER DEFAULT 1,
+      ts TEXT NOT NULL,
+      suggestion_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      suggestion_type TEXT,
+      summary TEXT
+    );
+
+    -- Analysis cache table (replaces analysis-cache.json)
+    -- v9: input_hash for content-addressable caching (QMD SHA-256 pattern)
+    CREATE TABLE IF NOT EXISTS analysis_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL,
+      project TEXT,
+      days INTEGER,
+      input_hash TEXT,
+      analysis JSON NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+      ON analysis_cache(project, days, input_hash);
+
+    -- Skill embeddings table (for vector skill matching)
+    CREATE TABLE IF NOT EXISTS skill_embeddings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      source_path TEXT NOT NULL,
+      description TEXT,
+      keywords TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // FTS5 virtual table for events text search (v9: QMD FTS5 trigger pattern)
+  // Enables keyword search on prompts and error messages via SQL MATCH
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+      type, text, content='events', content_rowid='id'
+    );
+
+    -- Triggers to keep FTS5 index in sync with events table
+    -- COALESCE extracts $.text (prompt) or $.error (tool_error) depending on event type
+    CREATE TRIGGER IF NOT EXISTS events_fts_insert AFTER INSERT ON events BEGIN
+      INSERT INTO events_fts(rowid, type, text)
+      VALUES (NEW.id, NEW.type,
+        COALESCE(json_extract(NEW.data, '$.text'), json_extract(NEW.data, '$.error')));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
+      INSERT INTO events_fts(events_fts, rowid, type, text)
+      VALUES ('delete', OLD.id, OLD.type,
+        COALESCE(json_extract(OLD.data, '$.text'), json_extract(OLD.data, '$.error')));
+    END;
+
+    -- v9: Enforce INSERT-only constraint at DB level (prevents FTS desync from accidental UPDATEs)
+    CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events BEGIN
+      SELECT RAISE(ABORT, 'events table is INSERT-only. UPDATE is prohibited to maintain FTS5 consistency.');
+    END;
+  `);
+
+  // vec0 virtual tables — wrapped in individual try-catch
+  // because IF NOT EXISTS behavior may vary across sqlite-vec versions
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_error_kb USING vec0(
+      error_kb_id INTEGER PRIMARY KEY, embedding float[384]
+    )`);
+  } catch { /* Table already exists or vec0 unavailable */ }
+
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
+      skill_id INTEGER PRIMARY KEY, embedding float[384]
+    )`);
+  } catch { /* Table already exists or vec0 unavailable */ }
+}
+
+/**
+ * v8→v9 schema migration
+ * Adds input_hash column to analysis_cache and events_fts if missing.
+ * Safe to call multiple times (idempotent via column existence check).
+ */
+function migrateV9(db) {
+  // Check if input_hash column exists in analysis_cache
+  const columns = db.prepare("PRAGMA table_info('analysis_cache')").all();
+  const hasInputHash = columns.some(c => c.name === 'input_hash');
+  if (!hasInputHash && columns.length > 0) {
+    db.exec('ALTER TABLE analysis_cache ADD COLUMN input_hash TEXT');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+      ON analysis_cache(project, days, input_hash)`);
+  }
+
+  // Ensure events_fts exists (may be missing on v8 databases)
+  const ftsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='events_fts'"
+  ).get();
+  if (!ftsExists) {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+        type, text, content='events', content_rowid='id'
+      );
+      CREATE TRIGGER IF NOT EXISTS events_fts_insert AFTER INSERT ON events BEGIN
+        INSERT INTO events_fts(rowid, type, text)
+        VALUES (NEW.id, NEW.type,
+          COALESCE(json_extract(NEW.data, '$.text'), json_extract(NEW.data, '$.error')));
+      END;
+      CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
+        INSERT INTO events_fts(events_fts, rowid, type, text)
+        VALUES ('delete', OLD.id, OLD.type,
+          COALESCE(json_extract(OLD.data, '$.text'), json_extract(OLD.data, '$.error')));
+      END;
+    `);
+    // Backfill existing events into FTS index
+    db.exec(`
+      INSERT INTO events_fts(rowid, type, text)
+      SELECT id, type, COALESCE(json_extract(data, '$.text'), json_extract(data, '$.error'))
+      FROM events WHERE type IN ('prompt', 'tool_error');
+    `);
+  }
 }
 
 export function getProjectName(cwd) {
@@ -340,149 +552,241 @@ export function getProjectName(cwd) {
   return cwd ? cwd.split('/').filter(Boolean).pop() : 'unknown';
 }
 
-// 주의: project(디렉토리명)는 표시용, projectPath(전체 경로)가 정규 식별자
-// 동명 프로젝트 충돌 방지를 위해 필터링은 projectPath 기반 권장
-
-export function appendEntry(logFile, entry) {
-  rotateIfNeeded(logFile);
-  appendFileSync(logFile, JSON.stringify(entry) + '\n');
-  // 100회 기록마다 보관기간 초과 로그 삭제 (매번 실행하지 않음)
-  if (Math.random() < 0.01) pruneOldLogs();
+/**
+ * 프로젝트 루트 경로 (정규 식별자)
+ * CLAUDE_PROJECT_DIR 환경변수를 우선 사용 (cwd가 서브디렉토리일 수 있음)
+ */
+export function getProjectPath(cwd) {
+  return process.env.CLAUDE_PROJECT_DIR || cwd;
 }
 
-export function readEntries(logFile, filterOrLimit = {}) {
-  // 숫자가 전달되면 최근 N개 엔트리만 반환하는 축약 호출
-  if (typeof filterOrLimit === 'number') {
-    const allLines = readFileSync(logFile, 'utf-8').trim().split('\n');
-    return allLines.slice(-filterOrLimit)
-      .map(l => { try { return JSON.parse(l); } catch { return null; } })
-      .filter(Boolean);
-  }
-  const filter = filterOrLimit;
+// 주의: project(디렉토리명)는 표시용, project_path(전체 경로)가 정규 식별자
+// 동명 프로젝트 충돌 방지를 위해 필터링은 project_path 기반 권장
 
-  if (!existsSync(logFile)) return [];
-
-  // 스트리밍 방식: 한 줄씩 읽으며 필터 적용 (대용량 대응)
-  const content = readFileSync(logFile, 'utf-8');
-  const entries = [];
-
-  let start = 0;
-  while (start < content.length) {
-    let end = content.indexOf('\n', start);
-    if (end === -1) end = content.length;
-    const line = content.slice(start, end).trim();
-    start = end + 1;
-
-    if (!line) continue;
-
-    // since 필터: 타임스탬프를 JSON 파싱 없이 빠르게 비교
-    if (filter.since) {
-      const tsMatch = line.match(/"ts":"([^"]+)"/);
-      if (tsMatch && tsMatch[1] < filter.since) continue;
-    }
-
-    let entry;
-    try { entry = JSON.parse(line); } catch { continue; }
-
-    if (filter.type && entry.type !== filter.type) continue;
-    if (filter.sessionId && entry.sessionId !== filter.sessionId) continue;
-    if (filter.project && entry.project !== filter.project) continue;
-    if (filter.projectPath && entry.projectPath !== filter.projectPath) continue;
-
-    entries.push(entry);
-  }
-
-  return entries;
+/**
+ * 이벤트 삽입 (replaces appendEntry)
+ * 훅에서 수집한 이벤트를 events 테이블에 기록
+ */
+export function insertEvent(entry) {
+  const db = getDb();
+  const { v = 1, type, ts, sessionId, project, projectPath, ...rest } = entry;
+  db.prepare(`
+    INSERT INTO events (v, type, ts, session_id, project, project_path, data)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(v, type, ts, sessionId, project, projectPath, JSON.stringify(rest));
 }
 
 /**
- * 세션 인덱스: 세션별 메타데이터를 기록하여 빠른 세션 조회
- * 현재는 미사용 (향후 대용량 최적화 시 활용 예정)
- * TODO: 각 수집 훅에서 appendEntry() 후 updateSessionIndex() 호출 추가
- * TODO: session-summary.mjs에서 인덱스 기반 조회로 전환
+ * 이벤트 쿼리 (replaces readEntries)
+ * SQL 인덱스 기반 필터링으로 JSONL 순차 스캔 대비 대폭 성능 향상
  */
-const SESSION_INDEX_FILE = join(DATA_DIR, 'session-index.json');
+export function queryEvents(filters = {}) {
+  const db = getDb();
+  const conditions = [];
+  const params = [];
 
-export function getSessionIndex() {
-  if (!existsSync(SESSION_INDEX_FILE)) return {};
-  return JSON.parse(readFileSync(SESSION_INDEX_FILE, 'utf-8'));
-}
-
-export function updateSessionIndex(sessionId, project, entryCount) {
-  const index = getSessionIndex();
-  if (!index[sessionId]) {
-    index[sessionId] = { project, startTs: new Date().toISOString(), entries: 0 };
+  if (filters.type) {
+    conditions.push('type = ?');
+    params.push(filters.type);
   }
-  index[sessionId].entries += entryCount;
-  index[sessionId].lastTs = new Date().toISOString();
-  writeFileSync(SESSION_INDEX_FILE, JSON.stringify(index, null, 2));
+  if (filters.sessionId) {
+    conditions.push('session_id = ?');
+    params.push(filters.sessionId);
+  }
+  if (filters.projectPath) {
+    conditions.push('project_path = ?');
+    params.push(filters.projectPath);
+  }
+  if (filters.project) {
+    conditions.push('project = ?');
+    params.push(filters.project);
+  }
+  if (filters.since) {
+    conditions.push('ts >= ?');
+    params.push(filters.since);
+  }
+
+  // FTS5 full-text search (v9: keyword search on prompt/error text)
+  if (filters.search) {
+    conditions.push('id IN (SELECT rowid FROM events_fts WHERE events_fts MATCH ?)');
+    params.push(filters.search);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limit = filters.limit ? `LIMIT ${Number(filters.limit)}` : '';
+
+  const rows = db.prepare(`
+    SELECT * FROM events ${where} ORDER BY ts DESC ${limit}
+  `).all(...params);
+
+  // Reconstruct flat entry format for backward compatibility
+  return rows.map(row => ({
+    v: row.v,
+    type: row.type,
+    ts: row.ts,
+    sessionId: row.session_id,
+    project: row.project,
+    projectPath: row.project_path,
+    ...JSON.parse(row.data)
+  }));
 }
 
+/**
+ * 세션별 이벤트 조회 (편의 함수)
+ */
+export function getSessionEvents(sessionId, limit) {
+  return queryEvents({ sessionId, limit });
+}
+
+/**
+ * 임베딩 생성 (임베딩 데몬 클라이언트)
+ * Unix socket을 통해 상주 임베딩 서버에 요청
+ * 서버 미실행 시 빈 배열 반환 (텍스트 매칭 폴백)
+ */
+export async function generateEmbeddings(texts) {
+  if (!texts || texts.length === 0) return [];
+
+  try {
+    const { embedViaServer } = await import('./embedding-client.mjs');
+    return await embedViaServer(texts);
+  } catch {
+    return []; // Server not available, fall through to text matching
+  }
+}
+
+/**
+ * 벡터 유사도 검색 (2단계 쿼리)
+ * Step 1: vec0 가상 테이블에서 KNN 검색으로 ID + distance 수집
+ * Step 2: 원본 테이블에서 ID로 상세 데이터 조회
+ * Note: vec0 MATCH와 직접 JOIN은 sqlite-vec 버전에 따라 미지원될 수 있어 2단계로 분리
+ */
+// v9: Table registry for extensible vector search (avoids hardcoded branching)
+const VEC_TABLE_REGISTRY = {
+  error_kb:         { vecTable: 'vec_error_kb',          fkColumn: 'error_kb_id' },
+  skill_embeddings: { vecTable: 'vec_skill_embeddings',  fkColumn: 'skill_id' }
+};
+
+export function vectorSearch(table, vecTable, queryEmbedding, limit = 5) {
+  const db = getDb();
+  const embeddingBlob = Buffer.from(new Float32Array(queryEmbedding).buffer);
+  const registry = VEC_TABLE_REGISTRY[table];
+  if (!registry) return [];
+
+  // Step 1: KNN search on vec0
+  const vecResults = db.prepare(`
+    SELECT ${registry.fkColumn}, distance FROM ${registry.vecTable}
+    WHERE embedding MATCH ? AND k = ?
+    ORDER BY distance
+  `).all(embeddingBlob, limit);
+  if (vecResults.length === 0) return [];
+
+  // Step 2: Fetch full records by IDs
+  const ids = vecResults.map(r => r[registry.fkColumn]);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`).all(...ids);
+
+  // Merge distance and preserve order
+  const distMap = Object.fromEntries(vecResults.map(r => [r[registry.fkColumn], r.distance]));
+  return rows.map(r => ({ ...r, distance: distMap[r.id] }))
+    .sort((a, b) => a.distance - b.distance);
+}
+
+/**
+ * stdin 읽기 (비동기)
+ * Claude Code 훅은 JSON 데이터를 stdin으로 전달
+ */
 export function readStdin() {
-  const chunks = [];
-  const fd = openSync('/dev/stdin', 'r');
-  const buf = Buffer.alloc(65536);
-  let n;
-  while ((n = readSync(fd, buf)) > 0) {
-    chunks.push(buf.slice(0, n));
+  return new Promise((resolve, reject) => {
+    let data = '';
+    const timeout = setTimeout(() => reject(new Error('stdin timeout')), 5000);
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('end', () => {
+      clearTimeout(timeout);
+      try { resolve(JSON.parse(data)); }
+      catch (e) { reject(e); }
+    });
+    process.stdin.on('error', (e) => { clearTimeout(timeout); reject(e); });
+  });
+}
+
+/**
+ * Privacy 태그 스트리핑 (차용: claude-mem <private> 태그 패턴)
+ * 사용자가 <private>...</private>로 감싼 내용은 DB에 저장하지 않음
+ * Hook 레이어(edge)에서 처리하여 민감 정보가 DB에 도달하지 않도록 보장
+ * NOTE: 닫히지 않은 <private> 태그(예: "<private>비밀번호")는 의도적으로 무시한다.
+ *       정규식은 반드시 </private> 종료 태그가 있어야 매칭하며,
+ *       이는 사용자가 명시적으로 범위를 지정한 경우에만 스트리핑하기 위함이다.
+ */
+export function stripPrivateTags(text) {
+  if (!text) return text;
+  return text.replace(/<private>[\s\S]*?<\/private>/gi, '[PRIVATE]').trim();
+}
+
+export function loadConfig() {
+  const configPath = join(GLOBAL_DIR, 'config.json');
+  if (!existsSync(configPath)) return {};
+  return JSON.parse(readFileSync(configPath, 'utf-8'));
+}
+
+/**
+ * 설정 기반 시스템 활성화 체크
+ * 각 훅에서 호출하여 enabled=false이면 즉시 종료
+ */
+export function isEnabled() {
+  const config = loadConfig();
+  return config.enabled !== false;
+}
+
+/**
+ * 오래된 이벤트 삭제 (replaces rotateIfNeeded + pruneOldLogs)
+ * SQLite DELETE WHERE로 보관기간 초과 데이터 정리
+ */
+export function pruneOldEvents(retentionDays) {
+  if (retentionDays === undefined) {
+    const config = loadConfig();
+    retentionDays = config.retentionDays || RETENTION_DAYS;
   }
-  closeSync(fd);
-  return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-}
-
-function rotateIfNeeded(logFile) {
-  try {
-    if (!existsSync(logFile)) return;
-    const stats = statSync(logFile);
-    if (stats.size > MAX_FILE_SIZE) {
-      const rotated = logFile.replace('.jsonl', `-${Date.now()}.jsonl`);
-      try {
-        renameSync(logFile, rotated);
-      } catch (e) {
-        // TOCTOU: 다른 프로세스가 이미 로테이션한 경우 무시
-        if (e.code !== 'ENOENT') throw e;
-      }
-    }
-  } catch { /* 로테이션 실패해도 수집은 계속 */ }
-}
-
-function pruneOldLogs() {
-  try {
-    const cutoff = Date.now() - RETENTION_DAYS * 86400000;
-    for (const file of readdirSync(DATA_DIR)) {
-      if (file.startsWith('prompt-log-') && file.endsWith('.jsonl')) {
-        const match = file.match(/(\d+)\.jsonl$/);
-        if (match && parseInt(match[1]) < cutoff) {
-          unlinkSync(join(DATA_DIR, file));
-        }
-      }
-    }
-  } catch { /* 정리 실패해도 계속 */ }
+  const db = getDb();
+  const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString();
+  db.prepare('DELETE FROM events WHERE ts < ?').run(cutoff);
+  db.prepare('DELETE FROM error_kb WHERE ts < ? AND use_count = 0').run(cutoff);
 }
 ```
+
+> **JSONL → SQLite 마이그레이션 요약**:
+> - `appendEntry(logFile, entry)` → `insertEvent(entry)` (파일 경로 불필요)
+> - `readEntries(logFile, filter)` → `queryEvents(filter)` (SQL 인덱스 기반)
+> - `rotateIfNeeded()` + `pruneOldLogs()` → `pruneOldEvents()` (DELETE WHERE)
+> - `getLogFile()` → 제거 (DB 경로는 `getDb()` 내부에서 관리)
+> - `getSessionIndex()` / `updateSessionIndex()` → 제거 (SQL 인덱스가 대체)
 
 ### 4.3 프롬프트 수집 훅 (UserPromptSubmit)
 
 ```javascript
 // ~/.self-generation/hooks/prompt-logger.mjs
-import { getLogFile, getProjectName, appendEntry, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, stripPrivateTags, isEnabled } from '../lib/db.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
+
+  // Privacy tag stripping (v9: claude-mem <private> pattern)
+  // Strip <private>...</private> content before storage
+  const cleanPrompt = stripPrivateTags(input.prompt);
 
   const entry = {
     v: 1,
     type: 'prompt',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
-    text: input.prompt,
-    charCount: input.prompt.length
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
+    text: cleanPrompt,
+    charCount: cleanPrompt.length
   };
 
-  appendEntry(logFile, entry);
+  insertEvent(entry);
   process.exit(0);
 } catch (e) {
   process.exit(0);
@@ -493,36 +797,37 @@ try {
 > 이 작업들은 AI 분석 단계(`claude --print`)에서 의미 기반으로 수행하므로
 > 수집 훅은 원본 데이터만 빠르게 기록하는 역할에 집중한다.
 
+> **주의**: 위 Phase 1 `prompt-logger.mjs`는 8.2절의 v6 확장 버전으로 **완전 교체**된다. Phase 1과 v6를 병합하지 말 것 — v6 버전이 최종본이다.
+
 ### 4.4 도구 사용 수집 훅 (PostToolUse)
 
 ```javascript
 // ~/.self-generation/hooks/tool-logger.mjs
-import { getLogFile, getProjectName, appendEntry, readEntries, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { recordResolution } from '../lib/error-kb.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
 
   const entry = {
     v: 1,
     type: 'tool_use',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
     tool: input.tool_name,
     meta: extractToolMeta(input.tool_name, input.tool_input),
     success: true
   };
 
-  appendEntry(logFile, entry);
+  insertEvent(entry);
 
   // Resolution detection (v7 개선: 세션스코프 + 풍부한 컨텍스트 + 크로스도구)
+  // Performance: limit to recent 50 events to avoid O(n²) on long sessions
   try {
-    const recentEntries = readEntries(logFile, 100);
-    const sessionEntries = recentEntries
-      .filter(e => e.sessionId === input.session_id)
+    const sessionEntries = queryEvents({ sessionId: input.session_id, limit: 50 })
       .sort((a, b) => new Date(a.ts) - new Date(b.ts)); // 시간순
 
     // 1. 동일 도구 해결 감지 (P4: 세션스코프, 5분 제한 제거)
@@ -544,6 +849,7 @@ try {
         tool: input.tool_name,
         sessionId: input.session_id,
         resolvedBy: 'success_after_error',
+        errorRaw: lastError.errorRaw || null,
         // P11: 풍부한 해결 컨텍스트
         filePath: entry.meta?.file || null,
         toolSequence: toolsBetween,
@@ -577,6 +883,7 @@ try {
             tool: pendingError.tool,
             sessionId: input.session_id,
             resolvedBy: 'cross_tool_resolution',
+            errorRaw: pendingError.errorRaw || null,
             helpingTool: input.tool_name,
             filePath: entry.meta?.file || null,
             toolSequence: helpingTools
@@ -594,6 +901,7 @@ try {
 }
 
 function extractToolMeta(tool, toolInput) {
+  if (!toolInput) return {};
   switch (tool) {
     case 'Bash':
       // 실행 커맨드의 첫 단어만 (보안: 전체 인자 저장하지 않음)
@@ -621,59 +929,28 @@ function extractToolMeta(tool, toolInput) {
 
 ```javascript
 // ~/.self-generation/hooks/error-logger.mjs
-import { getLogFile, getProjectName, appendEntry, readStdin } from '../lib/log-writer.mjs';
-
-try {
-  const input = readStdin();
-  const logFile = getLogFile();
-
-  const entry = {
-    v: 1,
-    type: 'tool_error',
-    ts: new Date().toISOString(),
-    sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
-    tool: input.tool_name,
-    error: normalizeError(input.error || ''),
-    errorRaw: (input.error || '').slice(0, 500)
-  };
-
-  appendEntry(logFile, entry);
-  process.exit(0);
-} catch (e) {
-  process.exit(0);
-}
-
-function normalizeError(error) {
-  // 정규화 순서: 경로 → 숫자 → 문자열 (순서 의존적: 숫자가 먼저 치환되므로 문자열 내 숫자도 치환됨)
-  return error
-    .replace(/\/[\w/.\-@]+/g, '<PATH>')
-    .replace(/\d{2,}/g, '<N>')
-    .replace(/'[^']{0,100}'/g, '<STR>')
-    .replace(/"[^"]{0,100}"/g, '<STR>')
-    .slice(0, 200)
-    .trim();
-}
+// 최종 구현은 8.3절의 v6 확장 버전(에러 KB 검색 포함)을 사용한다.
+// Phase 1에서도 v6 버전을 구현하라. 에러 KB 검색이 실패하면 자동으로 무시된다(try/catch).
+// → 8.3절 참조
 ```
+
+> **주의**: 위 Phase 1 `error-logger.mjs`는 8.3절의 v6 확장 버전으로 **완전 교체**된다. Phase 1과 v6를 병합하지 말 것 — v6 버전이 최종본이다.
 
 ### 4.6 세션 요약 훅 (SessionEnd)
 
-> **참고 (v5)**: 이 훅은 세션 요약만 기록한다. AI 분석 트리거는 Phase 2의
-> session-summary.mjs 확장판(5.4절)에서 담당한다. 구현 시 이 기본 버전을
-> 5.4절 코드로 교체하면 된다.
+> **참고 (v5)**: 이 훅은 세션 요약만 기록한다. AI 분석 트리거와 임베딩 배치 생성은
+> session-summary.mjs 확장판(5.4절)에서 담당한다. **구현 시 이 기본 버전을
+> 5.4절의 최종 버전(임베딩 배치 포함)으로 완전 교체한다.**
 
 ```javascript
 // ~/.self-generation/hooks/session-summary.mjs (기본 버전, Phase 1용)
-import { getLogFile, getProjectName, readEntries, appendEntry, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, queryEvents, getProjectName, getProjectPath, readStdin } from '../lib/db.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
 
-  // 이 세션의 이벤트들을 집계
-  // NOTE: 현재 전체 파일 스캔. 대용량 시 세션 인덱스 기반 조회로 전환 필요
-  const sessionEntries = readEntries(logFile, { sessionId: input.session_id });
+  // 이 세션의 이벤트들을 집계 (SQL 인덱스 기반, 전체 스캔 불필요)
+  const sessionEntries = queryEvents({ sessionId: input.session_id });
 
   const prompts = sessionEntries.filter(e => e.type === 'prompt');
   const tools = sessionEntries.filter(e => e.type === 'tool_use');
@@ -691,8 +968,8 @@ try {
     type: 'session_summary',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
     promptCount: prompts.length,
     toolCounts,
     toolSequence,
@@ -701,7 +978,7 @@ try {
     // v5: intents, topKeywords 제거 → AI 분석 단계에서 처리
   };
 
-  appendEntry(logFile, entry);
+  insertEvent(entry);
   process.exit(0);
 } catch (e) {
   process.exit(0);
@@ -726,12 +1003,12 @@ try {
 
 | 모드 | 시점 | 방식 | 소요 시간 |
 |------|------|------|----------|
-| **AI 분석** | SessionEnd 훅 (비동기) | `claude --print`로 수집 데이터 분석 → `analysis-cache.json` 저장 | 10-30초 (백그라운드) |
-| **캐시 주입** | SessionStart 훅 | `analysis-cache.json` 읽기 → `additionalContext`로 주입 | <100ms |
+| **AI 분석** | SessionEnd 훅 (비동기) | `claude --print`로 수집 데이터 분석 → `analysis_cache` 테이블 저장 | 10-30초 (백그라운드) |
+| **캐시 주입** | SessionStart 훅 | `analysis_cache` 테이블 조회 → `additionalContext`로 주입 | <1ms (SQLite 인덱스) |
 | **수동 분석** | CLI 실행 (`node ~/.self-generation/bin/analyze.mjs`) | `claude --print` 대화형 분석 | 10-30초 |
 
 **핵심 설계**: 비용이 드는 AI 분석은 SessionEnd에서 비동기로 실행하고,
-SessionStart에서는 캐시만 읽어 주입하므로 세션 시작 지연이 없다.
+SessionStart에서는 DB 캐시만 읽어 주입하므로 세션 시작 지연이 없다.
 
 ### 5.2 AI 분석 프롬프트 템플릿
 
@@ -778,9 +1055,9 @@ SessionStart에서는 캐시만 읽어 주입하므로 세션 시작 지연이 �
    - `claude_md`: CLAUDE.md 지침 추가 (반복 지시 영구화)
    - `hook`: 훅 워크플로우 등록 (반복 도구 패턴 자동화)
 
-5. **스킬 매칭 시노님 맵**: 각 기존 스킬에 대해, 사용자가 해당 스킬의 의도를 표현할 수 있는
-   다양한 표현(한국어/영어 혼용)을 나열하라.
-   - 예: "ts-init" → ["typescript 초기화", "TS 프로젝트 셋업", "새 TS 프로젝트", "setup typescript"]
+5. **스킬 설명 및 키워드**: 각 기존 스킬에 대해, 스킬의 목적을 한 줄로 설명하고
+   관련 키워드를 추출하라. (벡터 임베딩 생성에 사용됨)
+   - 예: "ts-init" → { description: "TypeScript 프로젝트 초기화 및 린터 설정", keywords: ["typescript", "초기화", "eslint", "prettier", "setup"] }
 
 ## 제안 품질 기준 (v7)
 
@@ -838,8 +1115,11 @@ SessionStart에서는 캐시만 읽어 주입하므로 세션 시작 지연이 �
       "rule": "규칙 텍스트 (claude_md 유형만)"
     }
   ],
-  "synonym_map": {
-    "skill-name": ["synonym1", "synonym2", "동의어3"]
+  "skill_descriptions": {
+    "skill-name": {
+      "description": "스킬 목적 한 줄 설명",
+      "keywords": ["keyword1", "keyword2", "키워드3"]
+    }
   }
 }
 ```
@@ -852,29 +1132,40 @@ JSON만 출력하라. 다른 텍스트는 포함하지 마라.
 ```javascript
 // ~/.self-generation/lib/ai-analyzer.mjs
 import { execSync, spawn } from 'child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { createHash } from 'crypto';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { getLogFile, readEntries } from './log-writer.mjs';
+import { getDb, queryEvents } from './db.mjs';
 import { getFeedbackSummary } from './feedback-tracker.mjs';
 import { loadSkills } from './skill-matcher.mjs';
 
 const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
-const CACHE_FILE = join(GLOBAL_DIR, 'data', 'analysis-cache.json');
 const PROMPT_TEMPLATE = join(GLOBAL_DIR, 'prompts', 'analyze.md');
+
+/**
+ * Content-addressable hash of input events (v9: QMD SHA-256 pattern)
+ * Same input events produce the same hash → skip redundant AI analysis
+ */
+function computeInputHash(events) {
+  const content = events.map(e =>
+    `${e.type}:${e.ts}:${e.session_id}:${JSON.stringify(e.data)}`
+  ).join('\n');
+  return createHash('sha256').update(content).digest('hex');
+}
 
 /**
  * AI 분석 실행 (동기)
  * SessionEnd 훅 또는 CLI에서 호출
  */
 export function runAnalysis(options = {}) {
-  const { days = 7, project = null } = options;
+  const { days = 7, project = null, projectPath = null } = options;
 
-  const logFile = getLogFile();
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const filter = { since };
-  if (project) filter.project = project;
+  if (projectPath) filter.projectPath = projectPath;
+  else if (project) filter.project = project;
 
-  const entries = readEntries(logFile, filter);
+  const entries = queryEvents(filter);
 
   // 최소 데이터 체크: 프롬프트 5개 미만이면 분석 생략
   const prompts = entries.filter(e => e.type === 'prompt');
@@ -882,30 +1173,43 @@ export function runAnalysis(options = {}) {
     return { suggestions: [], reason: 'insufficient_data' };
   }
 
+  // Content-addressable cache hit check (v9: skip AI call if input unchanged)
+  const projectKey = project || 'all';
+  const inputHash = computeInputHash(entries);
+  const db = getDb();
+  const cached = db.prepare(
+    'SELECT analysis FROM analysis_cache WHERE project = ? AND days = ? AND input_hash = ?'
+  ).get(projectKey, days, inputHash);
+  if (cached) {
+    return JSON.parse(cached.analysis); // Cache hit — skip claude --print
+  }
+
   // 로그 데이터를 요약하여 프롬프트에 주입 (토큰 절약)
   const logSummary = summarizeForPrompt(entries);
-  const prompt = buildPrompt(logSummary, days, project);
+  const prompt = buildPrompt(logSummary, days, project, projectPath);
 
   try {
     // claude --print: 비대화형 모드로 실행, JSON 응답만 받음
     const result = execSync(
-      `claude --print "${prompt.replace(/"/g, '\\"')}"`,
+      'claude --print --model sonnet',
       {
+        input: prompt,
         encoding: 'utf-8',
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 120000  // 2 minutes max
       }
     );
 
     const analysis = JSON.parse(extractJSON(result));
 
-    // 캐시에 저장
-    const cache = {
-      ts: new Date().toISOString(),
-      project: project || 'all',
-      days,
-      analysis
-    };
-    writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+    // 캐시를 DB에 저장 (analysis_cache 테이블, v9: with input_hash)
+    // ON CONFLICT UPDATE preserves the row id (INSERT OR REPLACE would delete+reinsert)
+    db.prepare(`
+      INSERT INTO analysis_cache (ts, project, days, input_hash, analysis)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(project, days, input_hash)
+      DO UPDATE SET ts = excluded.ts, analysis = excluded.analysis
+    `).run(new Date().toISOString(), projectKey, days, inputHash, JSON.stringify(analysis));
 
     return analysis;
   } catch (e) {
@@ -919,12 +1223,12 @@ export function runAnalysis(options = {}) {
  * SessionEnd 훅에서 호출
  */
 export function runAnalysisAsync(options = {}) {
-  const args = ['--print'];
-  const { days = 7, project = null } = options;
+  const { days = 7, project = null, projectPath = null } = options;
 
   const child = spawn('node', [join(GLOBAL_DIR, 'bin', 'analyze.mjs'),
     '--days', String(days),
-    ...(project ? ['--project', project] : [])
+    ...(project ? ['--project', project] : []),
+    ...(projectPath ? ['--project-path', projectPath] : [])
   ], {
     detached: true,
     stdio: 'ignore'
@@ -934,18 +1238,24 @@ export function runAnalysisAsync(options = {}) {
 }
 
 /**
- * 캐시된 분석 결과 조회
+ * 캐시된 분석 결과 조회 (DB 기반)
  * SessionStart 훅에서 호출
+ * v9: project 필터 추가 — 크로스 프로젝트 캐시 오염 방지
  */
-export function getCachedAnalysis(maxAgeHours = 24) {
-  if (!existsSync(CACHE_FILE)) return null;
-
+export function getCachedAnalysis(maxAgeHours = 24, project = null) {
   try {
-    const cache = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
-    const age = Date.now() - new Date(cache.ts).getTime();
-    if (age > maxAgeHours * 3600000) return null; // 캐시 만료
+    const db = getDb();
+    const cutoff = new Date(Date.now() - maxAgeHours * 3600000).toISOString();
 
-    return cache.analysis;
+    const projectKey = project || 'all';
+    const row = db.prepare(`
+      SELECT analysis FROM analysis_cache
+      WHERE ts >= ? AND project = ?
+      ORDER BY ts DESC LIMIT 1
+    `).get(cutoff, projectKey);
+
+    if (!row) return null;
+    return JSON.parse(row.analysis);
   } catch {
     return null;
   }
@@ -983,7 +1293,7 @@ function summarizeForPrompt(entries, maxPrompts = 100) {
   };
 }
 
-function buildPrompt(logSummary, days, project) {
+function buildPrompt(logSummary, days, project, projectPath = null) {
   let template = readFileSync(PROMPT_TEMPLATE, 'utf-8');
   template = template.replace('{{days}}', String(days));
   template = template.replace('{{project}}', project || 'all');
@@ -995,7 +1305,11 @@ function buildPrompt(logSummary, days, project) {
     feedback ? JSON.stringify(feedback, null, 2) : '피드백 이력 없음 (첫 분석)');
 
   // P3: 기존 스킬 목록 주입 (v7)
-  const skills = loadSkills();
+  // projectPath 직접 전달 우선, 없으면 이벤트에서 가장 최근 경로 조회
+  const resolvedPath = projectPath || (project
+    ? queryEvents({ project, limit: 1 })[0]?.projectPath || null
+    : null);
+  const skills = loadSkills(resolvedPath);
   template = template.replace('{{existing_skills}}',
     skills.length > 0 ? skills.map(s => `- ${s.name}: ${s.description || ''}`).join('\n') : '등록된 스킬 없음');
 
@@ -1031,18 +1345,19 @@ function extractJSON(text) {
 
 ```javascript
 // ~/.self-generation/hooks/session-summary.mjs
-import { getLogFile, getProjectName, readEntries, appendEntry, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, queryEvents, getProjectName, getProjectPath, getDb, readStdin, generateEmbeddings, isEnabled, pruneOldEvents } from '../lib/db.mjs';
 import { runAnalysisAsync } from '../lib/ai-analyzer.mjs';
+import { join } from 'path';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
 
   // P8: 비정상/미니멀 세션은 AI 분석 생략 (v7)
   const skipAnalysis = input.reason === 'clear' || false;
 
-  // 이 세션의 이벤트들을 집계
-  const sessionEntries = readEntries(logFile, { sessionId: input.session_id });
+  // 이 세션의 이벤트들을 집계 (SQL 인덱스 기반)
+  const sessionEntries = queryEvents({ sessionId: input.session_id });
 
   const prompts = sessionEntries.filter(e => e.type === 'prompt');
   const tools = sessionEntries.filter(e => e.type === 'tool_use');
@@ -1060,8 +1375,8 @@ try {
     type: 'session_summary',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
     promptCount: prompts.length,
     toolCounts,
     toolSequence,
@@ -1078,13 +1393,30 @@ try {
     reason: input.reason || 'unknown'  // P8: 세션 종료 사유 (v7)
   };
 
-  appendEntry(logFile, entry);
+  insertEvent(entry);
 
   // AI 분석을 백그라운드로 트리거 (세션 종료를 블로킹하지 않음)
   // P8: reason='clear'이거나 프롬프트 3개 미만이면 분석 생략 (v7)
   if (!skipAnalysis && prompts.length >= 3) {
-    runAnalysisAsync({ days: 7, project: getProjectName(input.cwd) });
+    runAnalysisAsync({ days: 7, project: getProjectName(getProjectPath(input.cwd)), projectPath: getProjectPath(input.cwd) });
   }
+
+  // v9: Probabilistic DB pruning (10% chance per session, avoids overhead)
+  if (Math.random() < 0.1) {
+    try { pruneOldEvents(); } catch { /* Non-critical */ }
+  }
+
+  // v8: 배치 임베딩 처리를 detached 프로세스로 분리 (SessionEnd 블로킹 방지)
+  // 에러 KB + 스킬 임베딩 갱신을 비동기 백그라운드에서 수행
+  try {
+    const { spawn } = await import('child_process');
+    const batchScript = join(process.env.HOME, '.self-generation', 'lib', 'batch-embeddings.mjs');
+    const child = spawn('node', [batchScript, getProjectPath(input.cwd)], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+  } catch { /* Batch embedding trigger is non-critical */ }
 
   process.exit(0);
 } catch (e) {
@@ -1092,18 +1424,93 @@ try {
 }
 ```
 
+#### 5.4.1 배치 임베딩 스크립트 (batch-embeddings.mjs)
+
+SessionEnd에서 detached로 실행되는 배치 임베딩 처리 스크립트. 에러 KB와 스킬 임베딩을 갱신한다.
+
+```javascript
+// ~/.self-generation/lib/batch-embeddings.mjs
+import { getDb, generateEmbeddings } from './db.mjs';
+import { loadSkills, extractPatterns } from './skill-matcher.mjs';
+import { isServerRunning, startServer } from './embedding-client.mjs';
+
+const projectPath = process.argv[2] || process.cwd();
+
+try {
+  // Delay 10s to reduce DB write contention with session-summary and analyze processes.
+  // This does NOT guarantee contention-free access — concurrent writes are ultimately
+  // handled by SQLite WAL mode + busy_timeout(10s) below. The delay merely reduces
+  // the frequency of busy retries in the common case.
+  await new Promise(r => setTimeout(r, 10000));
+
+  // Ensure embedding daemon is running
+  if (!await isServerRunning()) {
+    await startServer();
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      if (await isServerRunning()) break;
+    }
+  }
+
+  const db = getDb();
+  db.pragma('busy_timeout = 10000'); // Extended for concurrent writes
+
+  // 1. 에러 KB 배치 임베딩
+  const newErrors = db.prepare(`
+    SELECT id, error_normalized FROM error_kb
+    WHERE id NOT IN (SELECT error_kb_id FROM vec_error_kb)
+  `).all();
+  if (newErrors.length > 0) {
+    const texts = newErrors.map(e => e.error_normalized);
+    const embeddings = await generateEmbeddings(texts);
+    const delStmt = db.prepare('DELETE FROM vec_error_kb WHERE error_kb_id = ?');
+    const vecStmt = db.prepare('INSERT INTO vec_error_kb (error_kb_id, embedding) VALUES (?, ?)');
+    newErrors.forEach((err, i) => {
+      if (embeddings[i]) {
+        const embeddingBlob = Buffer.from(new Float32Array(embeddings[i]).buffer);
+        delStmt.run(err.id);
+        vecStmt.run(err.id, embeddingBlob);
+      }
+    });
+  }
+
+  // 2. 스킬 임베딩 갱신
+  const skills = loadSkills(projectPath);
+  for (const skill of skills) {
+    const text = skill.content.slice(0, 500);
+    const info = db.prepare(`
+      INSERT OR REPLACE INTO skill_embeddings (name, source_path, description, keywords, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(skill.name, skill.sourcePath, skill.description || null, JSON.stringify(extractPatterns(skill.content)), new Date().toISOString());
+    const skillId = info.lastInsertRowid || db.prepare('SELECT id FROM skill_embeddings WHERE name = ?').get(skill.name)?.id;
+
+    const embeddings = await generateEmbeddings([text]);
+    if (embeddings?.[0] && skillId) {
+      const embeddingBlob = Buffer.from(new Float32Array(embeddings[0]).buffer);
+      db.prepare('DELETE FROM vec_skill_embeddings WHERE skill_id = ?').run(skillId);
+      db.prepare('INSERT INTO vec_skill_embeddings (skill_id, embedding) VALUES (?, ?)').run(skillId, embeddingBlob);
+    }
+  }
+
+  process.exit(0);
+} catch {
+  process.exit(0); // Non-critical batch process
+}
+```
+
 ### 5.5 SessionStart 훅 (캐시 주입)
 
 ```javascript
 // ~/.self-generation/hooks/session-analyzer.mjs
-import { readStdin } from '../lib/log-writer.mjs';
+import { readStdin, getProjectName, getProjectPath } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
 try {
-  const input = readStdin();
+  const input = await readStdin();
+  const project = getProjectName(getProjectPath(input.cwd));
 
-  // 캐시된 AI 분석 결과 조회 (24시간 이내)
-  const analysis = getCachedAnalysis(24);
+  // 캐시된 AI 분석 결과 조회 (24시간 이내, v9: 프로젝트별 필터)
+  const analysis = getCachedAnalysis(24, project);
 
   if (analysis && analysis.suggestions && analysis.suggestions.length > 0) {
     const msg = formatSuggestionsForContext(analysis.suggestions);
@@ -1144,10 +1551,11 @@ import { runAnalysis } from '../lib/ai-analyzer.mjs';
 const args = process.argv.slice(2);
 const days = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '30');
 const project = args.find((_, i, a) => a[i - 1] === '--project') || null;
+const projectPath = args.find((_, i, a) => a[i - 1] === '--project-path') || null;
 
 console.log(`\n=== Self-Generation AI 패턴 분석 (최근 ${days}일) ===\n`);
 
-const result = runAnalysis({ days, project });
+const result = runAnalysis({ days, project, projectPath });
 
 if (result.error) {
   console.error(`분석 실패: ${result.error}`);
@@ -1228,6 +1636,22 @@ console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <�
 - `lib/ai-analyzer.mjs` — `claude --print` 실행, 캐시 관리
 - `prompts/analyze.md` — AI 분석 프롬프트 템플릿
 
+#### v8 전환 시 모듈 변경
+
+**교체된 모듈** (1개):
+- `lib/log-writer.mjs` → `lib/db.mjs` — JSONL 읽기/쓰기를 SQLite + sqlite-vec 기반으로 전환
+
+**변경된 모듈** (4개):
+- `lib/ai-analyzer.mjs` — 캐시 저장을 파일에서 `analysis_cache` 테이블로 전환
+- `lib/error-kb.mjs` — 벡터 유사도 검색 추가 (`error_kb` 테이블 + sqlite-vec)
+- `lib/skill-matcher.mjs` — 벡터 기반 스킬 매칭 추가 (`skill_embeddings` 테이블), `loadSynonymMap()` 제거
+- `lib/feedback-tracker.mjs` — JSONL에서 `feedback` 테이블로 전환
+
+**추가된 의존성** (3개):
+- `better-sqlite3` — Node.js 네이티브 SQLite3 바인딩
+- `sqlite-vec` — SQLite 벡터 유사도 검색 확장
+- `@xenova/transformers` — 로컬 임베딩 생성 (paraphrase-multilingual-MiniLM-L12-v2, 384차원)
+
 #### 트레이드오프
 
 | 항목 | 변화 | 수용 가능성 |
@@ -1248,16 +1672,20 @@ console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <�
 
 ```javascript
 // ~/.self-generation/bin/apply.mjs
-// 사용법: node ~/.self-generation/bin/apply.mjs <suggestion-number> [--global]
+// 사용법: node ~/.self-generation/bin/apply.mjs <suggestion-number> [--global] [--project <name>]
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 import { recordFeedback } from '../lib/feedback-tracker.mjs';
+import { insertEvent, getProjectName } from '../lib/db.mjs';
 
 const args = process.argv.slice(2);
 const num = parseInt(args[0]);
 const isGlobal = args.includes('--global');
+// v9: project filter — use --project flag or infer from cwd
+const projectIdx = args.indexOf('--project');
+const project = projectIdx !== -1 ? args[projectIdx + 1] : basename(process.cwd());
 
 if (isNaN(num)) {
   console.error('사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]');
@@ -1265,7 +1693,7 @@ if (isNaN(num)) {
 }
 
 // AI 분석 캐시에서 제안 목록 조회
-const analysis = getCachedAnalysis(168); // 7일 이내 캐시
+const analysis = getCachedAnalysis(168, project); // v9: project-scoped cache lookup
 if (!analysis || !analysis.suggestions?.length) {
   console.error('분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요.');
   process.exit(1);
@@ -1314,8 +1742,9 @@ switch (suggestion.type) {
         const settingsPath = join(process.env.HOME, '.claude', 'settings.json');
         const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf-8')) : {};
         const event = suggestion.hookEvent || 'PostToolUse';
-        if (!settings[event]) settings[event] = [];
-        settings[event].push(settingsEntry);
+        if (!settings.hooks) settings.hooks = {};
+        if (!settings.hooks[event]) settings.hooks[event] = [];
+        settings.hooks[event].push(settingsEntry);
         writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
         console.log(`✅ settings.json에 등록 완료`);
       } else {
@@ -1332,6 +1761,15 @@ switch (suggestion.type) {
 recordFeedback(suggestion.id, 'accepted', {
   suggestionType: suggestion.type,
   summary: suggestion.summary
+});
+
+// v9: Track suggestion application for calcSkillUsageRate()
+insertEvent({
+  v: 1,
+  type: suggestion.type === 'skill' ? 'skill_created' : 'suggestion_applied',
+  ts: new Date().toISOString(),
+  project: getProjectName(process.cwd()),
+  data: { suggestionId: suggestion.id, suggestionType: suggestion.type, scope: isGlobal ? 'global' : 'project' }
 });
 
 function applySkill(suggestion) {
@@ -1423,20 +1861,145 @@ console.log(`제안 거부 기록됨: ${suggestionId}`);
 console.log('이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩니다.');
 ```
 
+### 6.1.2 설치 스크립트
+
+```javascript
+// ~/.self-generation/bin/install.mjs
+// 사용법: node install.mjs [--uninstall]
+// v9: 자동화된 설치/제거 스크립트
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { homedir } from 'os';
+
+const HOME = homedir();
+const SELF_GEN_DIR = join(HOME, '.self-generation');
+const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
+const isUninstall = process.argv.includes('--uninstall');
+
+const HOOK_EVENTS = {
+  UserPromptSubmit: { script: 'prompt-logger.mjs', timeout: 5 },
+  PostToolUse: { script: 'tool-logger.mjs', timeout: 5 },
+  PostToolUseFailure: { script: 'error-logger.mjs', timeout: 5 },
+  PreToolUse: { script: 'pre-tool-guide.mjs', matcher: 'Edit|Write|Bash|Task', timeout: 5 },
+  SubagentStart: { script: 'subagent-context.mjs', timeout: 5 },
+  SubagentStop: { script: 'subagent-tracker.mjs', timeout: 5 },
+  SessionEnd: { script: 'session-summary.mjs', timeout: 10 },
+  SessionStart: { script: 'session-analyzer.mjs', timeout: 10 }
+};
+
+if (isUninstall) {
+  // Remove hooks from settings.json (preserve other hooks)
+  if (existsSync(SETTINGS_PATH)) {
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+    if (settings.hooks) {
+      for (const event of Object.keys(HOOK_EVENTS)) {
+        if (settings.hooks[event]) {
+          settings.hooks[event] = settings.hooks[event].filter(
+            group => !group.hooks?.some(h => h.command?.includes('.self-generation'))
+          );
+          if (settings.hooks[event].length === 0) delete settings.hooks[event];
+        }
+      }
+      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    }
+  }
+  console.log('✅ self-generation 훅이 settings.json에서 제거되었습니다.');
+  console.log(`   데이터 삭제: rm -rf ${SELF_GEN_DIR}`);
+  process.exit(0);
+}
+
+// 1. Create directory structure
+for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
+  mkdirSync(join(SELF_GEN_DIR, dir), { recursive: true });
+}
+console.log('📁 디렉토리 구조 생성 완료');
+
+// 2. Initialize package.json and install dependencies
+if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
+  writeFileSync(join(SELF_GEN_DIR, 'package.json'), JSON.stringify({
+    name: 'self-generation',
+    version: '0.1.0',
+    type: 'module',
+    private: true,
+    dependencies: {
+      'better-sqlite3': '^11.0.0',
+      'sqlite-vec': '^0.1.0',
+      '@xenova/transformers': '^2.17.0'
+    }
+  }, null, 2));
+}
+console.log('📦 package.json 생성 완료');
+
+try {
+  execSync('npm install --production', { cwd: SELF_GEN_DIR, stdio: 'inherit' });
+  console.log('📦 의존성 설치 완료');
+} catch (e) {
+  console.error('❌ 의존성 설치 실패:', e.message);
+  process.exit(1);
+}
+
+// 3. Initialize config.json
+const configPath = join(SELF_GEN_DIR, 'config.json');
+if (!existsSync(configPath)) {
+  writeFileSync(configPath, JSON.stringify({
+    enabled: true,
+    collectPromptText: true,
+    retentionDays: 90,
+    analysisModel: 'claude-sonnet-4-5-20250929'
+  }, null, 2));
+  console.log('⚙️ config.json 초기화 완료');
+}
+
+// 4. Merge hooks into settings.json (preserve existing hooks)
+mkdirSync(join(HOME, '.claude'), { recursive: true });
+const settings = existsSync(SETTINGS_PATH)
+  ? JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'))
+  : {};
+if (!settings.hooks) settings.hooks = {};
+
+for (const [event, config] of Object.entries(HOOK_EVENTS)) {
+  const script = config.script;
+  const matcher = config.matcher;
+  const timeout = config.timeout;
+  const hookEntry = {
+    type: 'command',
+    command: `node ${join(SELF_GEN_DIR, 'hooks', script)}`,
+    timeout
+  };
+  const group = { hooks: [hookEntry] };
+  if (matcher) group.matcher = matcher;
+
+  // Avoid duplicate registration
+  if (!settings.hooks[event]) settings.hooks[event] = [];
+  const alreadyRegistered = settings.hooks[event].some(
+    g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+  );
+  if (!alreadyRegistered) settings.hooks[event].push(group);
+}
+
+writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+console.log('🔗 settings.json에 훅 등록 완료');
+
+console.log('\n✅ self-generation 설치 완료!');
+console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니다.');
+```
+
 ### 6.2 사용자 승인 플로우
 
 ```
 [SessionEnd 훅]
   │
-  ├─ 세션 요약 기록
+  ├─ 세션 요약 기록 (events 테이블)
   │
   └─ AI 분석 백그라운드 트리거 (claude --print)
        │
-       └─ analysis-cache.json에 결과 저장
+       └─ analysis_cache 테이블에 결과 저장
 
 [SessionStart 훅]
   │
-  ├─ analysis-cache.json 읽기 (<100ms)
+  ├─ analysis_cache 테이블 조회 (<1ms, SQLite 인덱스)
   │
   ├─ 캐시된 제안이 있으면?
   │    │
@@ -1473,24 +2036,25 @@ console.log('이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩
 
 ```javascript
 // ~/.self-generation/lib/feedback-tracker.mjs
-import { join } from 'path';
-import { appendFileSync, readFileSync, existsSync } from 'fs';
-
-const DATA_DIR = join(process.env.HOME, '.self-generation', 'data');
-const FEEDBACK_FILE = join(DATA_DIR, 'feedback.jsonl');
+import { getDb, queryEvents } from './db.mjs';
+import { loadSkills } from './skill-matcher.mjs';
 
 /**
- * 피드백 기록
+ * 피드백 기록 (feedback 테이블에 INSERT)
  */
 export function recordFeedback(suggestionId, action, details = {}) {
-  const entry = {
-    v: 1,
-    ts: new Date().toISOString(),
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO feedback (v, ts, suggestion_id, action, suggestion_type, summary)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    1,
+    new Date().toISOString(),
     suggestionId,
     action,    // 'accepted' | 'rejected' | 'dismissed'
-    ...details
-  };
-  appendFileSync(FEEDBACK_FILE, JSON.stringify(entry) + '\n');
+    details.suggestionType || null,
+    details.summary || null
+  );
 }
 
 /**
@@ -1498,13 +2062,14 @@ export function recordFeedback(suggestionId, action, details = {}) {
  */
 function calcSkillUsageRate() {
   try {
-    const logFile = join(DATA_DIR, 'prompt-log.jsonl');
-    if (!existsSync(logFile)) return null;
-    const lines = readFileSync(logFile, 'utf-8').trim().split('\n');
-    const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const skillUsed = entries.filter(e => e.type === 'skill_used');
-    const skillCreated = entries.filter(e => e.type === 'prompt' && e.intent === 'skill_created');
-    return skillCreated.length > 0 ? skillUsed.length / skillCreated.length : null;
+    const db = getDb();
+    const skillUsed = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM events WHERE type = 'skill_used'`
+    ).get().cnt;
+    const skillCreated = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM events WHERE type = 'skill_created'`
+    ).get().cnt;
+    return skillCreated > 0 ? skillUsed / skillCreated : null;
   } catch { return null; }
 }
 
@@ -1514,33 +2079,34 @@ function calcSkillUsageRate() {
  */
 function calcRuleEffectiveness() {
   try {
-    const logFile = join(DATA_DIR, 'prompt-log.jsonl');
-    if (!existsSync(logFile)) return null;
-    const lines = readFileSync(logFile, 'utf-8').trim().split('\n');
-    const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const errors = entries.filter(e => e.type === 'tool_error');
-    // 규칙이 있는 에러가 최근 7일 내 재발했으면 비효과적
-    const recent = errors.filter(e => Date.now() - new Date(e.ts).getTime() < 7 * 86400000);
-    return { totalErrors: errors.length, recentErrors: recent.length };
+    const db = getDb();
+    const totalErrors = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM events WHERE type = 'tool_error'`
+    ).get().cnt;
+    const recentCutoff = new Date(Date.now() - 7 * 86400000).toISOString();
+    const recentErrors = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM events WHERE type = 'tool_error' AND ts >= ?`
+    ).get(recentCutoff).cnt;
+    return { totalErrors, recentErrors };
   } catch { return null; }
 }
 
 /**
  * 장기 미사용 스킬 탐지 (P5: v7)
  */
-function findStaleSkills(days) {
+function findStaleSkills(days, projectPath = null) {
   try {
-    const skills = loadSkills();
-    const logFile = join(DATA_DIR, 'prompt-log.jsonl');
-    if (!existsSync(logFile)) return [];
-    const lines = readFileSync(logFile, 'utf-8').trim().split('\n');
-    const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const skillUsages = entries.filter(e => e.type === 'skill_used');
-    const threshold = Date.now() - days * 86400000;
+    const skills = loadSkills(projectPath);
+    const db = getDb();
+    const threshold = new Date(Date.now() - days * 86400000).toISOString();
     return skills
       .filter(s => {
-        const lastUsed = skillUsages.filter(u => u.skillName === s.name).slice(-1)[0];
-        return !lastUsed || new Date(lastUsed.ts).getTime() < threshold;
+        const lastUsage = db.prepare(`
+          SELECT ts FROM events
+          WHERE type = 'skill_used' AND json_extract(data, '$.skillName') = ?
+          ORDER BY ts DESC LIMIT 1
+        `).get(s.name);
+        return !lastUsage || lastUsage.ts < threshold;
       })
       .map(s => s.name);
   } catch { return []; }
@@ -1551,30 +2117,30 @@ function findStaleSkills(days) {
  * AI가 이전 채택/거부 이력을 보고 제안 품질을 자체 조정
  */
 export function getFeedbackSummary() {
-  if (!existsSync(FEEDBACK_FILE)) return null;
+  try {
+    const db = getDb();
+    const entries = db.prepare(`SELECT * FROM feedback ORDER BY ts ASC`).all();
 
-  const lines = readFileSync(FEEDBACK_FILE, 'utf-8').trim().split('\n');
-  const entries = lines.filter(l => l).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    if (entries.length === 0) return null;
 
-  if (entries.length === 0) return null;
+    const accepted = entries.filter(e => e.action === 'accepted');
+    const rejected = entries.filter(e => e.action === 'rejected' || e.action === 'dismissed');
 
-  const accepted = entries.filter(e => e.action === 'accepted');
-  const rejected = entries.filter(e => e.action === 'rejected' || e.action === 'dismissed');
-
-  return {
-    total: entries.length,
-    acceptedCount: accepted.length,
-    rejectedCount: rejected.length,
-    rate: entries.length > 0 ? accepted.length / entries.length : 0,
-    // 최근 거부된 제안 요약 (AI가 유사 제안을 피하도록)
-    recentRejections: rejected.slice(-10).map(e => e.summary || e.suggestionId),
-    // 최근 채택된 제안 요약 (AI가 선호 패턴을 학습하도록)
-    recentAcceptances: accepted.slice(-10).map(e => e.summary || e.suggestionId),
-    // P5: 제안 효과 메트릭 (v7)
-    skillUsageRate: calcSkillUsageRate(),
-    ruleEffectiveness: calcRuleEffectiveness(),
-    staleSkills: findStaleSkills(30) // 30일 이상 미사용
-  };
+    return {
+      total: entries.length,
+      acceptedCount: accepted.length,
+      rejectedCount: rejected.length,
+      rate: entries.length > 0 ? accepted.length / entries.length : 0,
+      // 최근 거부된 제안 요약 (AI가 유사 제안을 피하도록)
+      recentRejections: rejected.slice(-10).map(e => e.summary || e.suggestion_id),
+      // 최근 채택된 제안 요약 (AI가 선호 패턴을 학습하도록)
+      recentAcceptances: accepted.slice(-10).map(e => e.summary || e.suggestion_id),
+      // P5: 제안 효과 메트릭 (v7)
+      skillUsageRate: calcSkillUsageRate(),
+      ruleEffectiveness: calcRuleEffectiveness(),
+      staleSkills: findStaleSkills(30) // 30일 이상 미사용
+    };
+  } catch { return null; }
 }
 ```
 
@@ -1640,65 +2206,117 @@ AI 분석 실행 시 `getFeedbackSummary()`의 결과를 프롬프트에 추가�
 - `hooks/pre-tool-guide.mjs` — PreToolUse 사전 예방 가이드
 - `hooks/subagent-context.mjs` — SubagentStart 컨텍스트 주입
 
+**변경된 모듈 (v8)**:
+- `lib/error-kb.mjs` — 벡터 유사도 검색 추가 (`error_kb` 테이블 + sqlite-vec)
+- `lib/skill-matcher.mjs` — 벡터 기반 매칭 추가 (`skill_embeddings` 테이블), `loadSynonymMap()` 제거
+
 ### 8.1 에러 KB 실시간 검색
 
-에러 발생 즉시 과거 동일 에러의 해결 이력을 검색하여 Claude에게 주입한다.
+에러 발생 즉시 과거 동일 에러의 해결 이력을 벡터 유사도 + 텍스트 폴백으로 검색하여 Claude에게 주입한다.
 
 ```javascript
 // ~/.self-generation/lib/error-kb.mjs
-import { existsSync, readFileSync, appendFileSync } from 'fs';
-import { join } from 'path';
-
-const KB_FILE = join(process.env.HOME, '.self-generation', 'data', 'error-kb.jsonl');
+import { getDb, vectorSearch, generateEmbeddings } from './db.mjs';
 
 /**
- * 에러 해결 이력 검색
- * 정규화된 에러 메시지로 과거 해결 사례를 조회
+ * 에러 메시지 정규화 (단일 소유자: error-kb.mjs)
+ * 경로, 숫자, 문자열 리터럴을 플레이스홀더로 치환하여 동일 패턴 에러를 그룹화
  */
-export function searchErrorKB(normalizedError) {
-  if (!existsSync(KB_FILE)) return null;
+export function normalizeError(error) {
+  return error
+    .replace(/\/[\w/.\-@]+/g, '<PATH>')
+    .replace(/\d{2,}/g, '<N>')
+    .replace(/'[^']{0,100}'/g, '<STR>')
+    .replace(/"[^"]{0,100}"/g, '<STR>')
+    .slice(0, 200)
+    .trim();
+}
 
-  const lines = readFileSync(KB_FILE, 'utf-8').trim().split('\n');
+/**
+ * 에러 해결 이력 검색 (Strong-signal shortcut + 벡터 폴백)
+ * v9 설계 변경: QMD의 Strong-signal shortcut 패턴을 차용.
+ * 텍스트 매칭을 먼저 시도하고, 정확한 매칭이 없을 때만 벡터 검색으로 폴백.
+ * 이유: 정확 매칭은 ~1ms, 벡터 검색은 ~5ms — 정확 매칭 성공 시 80% 시간 절약.
+ */
+export async function searchErrorKB(normalizedError) {
+  const db = getDb();
 
-  // 최근 이력부터 역순 검색 (최신 해결법 우선)
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (!lines[i]) continue;
-    try {
-      const entry = JSON.parse(lines[i]);
-      if (entry.error === normalizedError && entry.resolution) {
-        return entry;
-      }
-    } catch { continue; }
+  // 1. Strong-signal: 정확한 텍스트 매칭 (fastest path, ~1ms)
+  const exact = db.prepare(`
+    SELECT * FROM error_kb
+    WHERE error_normalized = ? AND resolution IS NOT NULL
+    ORDER BY use_count DESC, ts DESC LIMIT 1
+  `).get(normalizedError);
+  if (exact) {
+    db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
+      .run(new Date().toISOString(), exact.id);
+    return exact;
   }
 
-  // Fallback: substring match (P11 - broader matching)
-  for (const line of lines.reverse()) {
-    try {
-      const entry = JSON.parse(line);
-      if (entry.resolution && normalizedError.includes(entry.error.slice(0, 30))) {
-        entry.useCount = (entry.useCount || 0) + 1;
-        return entry;
-      }
-    } catch { continue; }
+  // 2. Strong-signal: 접두사 매칭 (첫 30자, ~2ms)
+  // Length ratio check prevents false positives when different errors share a prefix
+  // e.g. "TypeError: Cannot read properties of undefined (reading 'map')" vs '...length')"
+  const prefix = normalizedError.slice(0, 30);
+  const prefixMatch = db.prepare(`
+    SELECT * FROM error_kb
+    WHERE error_normalized LIKE ? AND resolution IS NOT NULL
+    ORDER BY use_count DESC, ts DESC LIMIT 1
+  `).get(prefix + '%');
+  if (prefixMatch) {
+    const lenRatio = Math.min(normalizedError.length, prefixMatch.error_normalized.length)
+      / Math.max(normalizedError.length, prefixMatch.error_normalized.length);
+    if (lenRatio >= 0.7) { // Length similarity threshold: 70%
+      db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
+        .run(new Date().toISOString(), prefixMatch.id);
+      return prefixMatch;
+    }
+    // Length ratio too different — fall through to vector search
   }
+
+  // 3. 벡터 유사도 검색 (텍스트 매칭 실패 시에만 실행, ~5ms via daemon)
+  try {
+    const embeddings = await generateEmbeddings([normalizedError]);
+    if (embeddings && embeddings[0]) {
+      const vectorResults = vectorSearch('error_kb', 'vec_error_kb', embeddings[0], 3)
+        .filter(r => r.resolution != null);
+      if (vectorResults.length > 0 && vectorResults[0].distance < 0.76) {
+        db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
+          .run(new Date().toISOString(), vectorResults[0].id);
+        return vectorResults[0];
+      }
+    }
+  } catch { /* Vector search not available */ }
 
   return null;
 }
 
 /**
- * 에러 해결 이력 기록
+ * 에러 해결 이력 기록 (error_kb 테이블에 INSERT)
  * PostToolUse에서 이전 에러가 해결되었을 때 호출
  * (에러 발생 후 동일 도구가 성공하면 해결로 간주)
+ * NOTE: 임베딩은 여기서 생성하지 않음 (SessionEnd 배치에서 처리)
  */
 export function recordResolution(normalizedError, resolution) {
-  const entry = {
-    v: 1,
-    ts: new Date().toISOString(),
-    error: normalizedError,
-    resolution,
-    useCount: 0
-  };
-  appendFileSync(KB_FILE, JSON.stringify(entry) + '\n');
+  const db = getDb();
+  // v9: UPSERT to prevent duplicate error_kb entries for same normalized error.
+  // On conflict, update resolution and increment use_count.
+  db.prepare(`
+    INSERT INTO error_kb (ts, error_normalized, error_raw, resolution, resolved_by, tool_sequence, use_count)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(error_normalized) DO UPDATE SET
+      ts = excluded.ts,
+      resolution = excluded.resolution,
+      resolved_by = excluded.resolved_by,
+      tool_sequence = excluded.tool_sequence,
+      use_count = use_count + 1
+  `).run(
+    new Date().toISOString(),
+    normalizedError,
+    resolution.errorRaw || null,
+    JSON.stringify(resolution),
+    resolution.resolvedBy || null,
+    resolution.toolSequence ? JSON.stringify(resolution.toolSequence) : null
+  );
 }
 ```
 
@@ -1706,39 +2324,52 @@ export function recordResolution(normalizedError, resolution) {
 
 ```javascript
 // ~/.self-generation/hooks/error-logger.mjs (v6 확장)
-import { getLogFile, getProjectName, appendEntry, readStdin } from '../lib/log-writer.mjs';
-import { searchErrorKB } from '../lib/error-kb.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
+import { normalizeError, searchErrorKB } from '../lib/error-kb.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
 
   const normalized = normalizeError(input.error || '');
 
-  // 1. 에러 기록 (기존)
+  // 1. 에러 기록 (events 테이블에 INSERT)
   const entry = {
     v: 1,
     type: 'tool_error',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
     tool: input.tool_name,
     error: normalized,
     errorRaw: (input.error || '').slice(0, 500)
   };
-  appendEntry(logFile, entry);
+  insertEvent(entry);
 
   // 2. 에러 KB 실시간 검색 (v6 추가)
-  const kbMatch = searchErrorKB(normalized);
+  // 2s timeout to prevent blocking Claude on sync hook (daemon cold start = 10s)
+  const kbMatch = await Promise.race([
+    searchErrorKB(normalized),
+    new Promise(resolve => setTimeout(() => resolve(null), 2000))
+  ]);
   if (kbMatch) {
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PostToolUseFailure',
-        additionalContext: `[Self-Generation 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
-          `- 에러: ${kbMatch.error}\n` +
-          `- 해결 방법: ${kbMatch.resolution}\n` +
-          `이 정보를 참고하여 해결을 시도하세요.`
+        additionalContext: (() => {
+          let resText = kbMatch.resolution;
+          try {
+            const res = JSON.parse(kbMatch.resolution);
+            resText = res.toolSequence
+              ? `${res.resolvedBy}: ${res.toolSequence.join(' → ')}`
+              : res.resolvedBy || kbMatch.resolution;
+          } catch {}
+          return `[Self-Generation 에러 KB] 이전에 동일 에러를 해결한 이력이 있습니다:\n` +
+            `- 에러: ${kbMatch.error_normalized}\n` +
+            `- 해결 방법: ${resText}\n` +
+            `이 정보를 참고하여 해결을 시도하세요.`;
+        })()
       }
     };
     process.stdout.write(JSON.stringify(output));
@@ -1748,15 +2379,208 @@ try {
 } catch (e) {
   process.exit(0);
 }
+// normalizeError()는 error-kb.mjs에서 import (단일 소유자 원칙)
+```
 
-function normalizeError(error) {
-  return error
-    .replace(/\/[\w/.\-@]+/g, '<PATH>')
-    .replace(/\d{2,}/g, '<N>')
-    .replace(/'[^']{0,100}'/g, '<STR>')
-    .replace(/"[^"]{0,100}"/g, '<STR>')
-    .slice(0, 200)
-    .trim();
+### 8.1.1 임베딩 데몬 (embedding-server.mjs)
+
+Transformers.js 모델을 메모리에 상주시키는 백그라운드 서버. 훅 프로세스는 매 호출마다 새로 생성되므로,
+모델 로딩(1~4초)을 매번 반복하는 대신 상주 프로세스의 소켓 인터페이스를 통해 ~5ms로 임베딩을 생성한다.
+
+```javascript
+// ~/.self-generation/lib/embedding-server.mjs
+import { createServer } from 'net';
+import { pipeline, env } from '@xenova/transformers';
+import { join } from 'path';
+import { homedir } from 'os';
+import { unlinkSync, existsSync } from 'fs';
+
+const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// Model initialization
+env.cacheDir = join(homedir(), '.self-generation', 'models');
+let extractor = null;
+let idleTimer = null;
+
+async function init() {
+  console.error('[embedding-server] Loading model...');
+  extractor = await pipeline('feature-extraction',
+    'Xenova/paraphrase-multilingual-MiniLM-L12-v2');
+  console.error('[embedding-server] Model loaded, ready for requests');
+}
+
+async function embed(texts) {
+  const results = [];
+  for (const text of texts) {
+    if (!text || text.trim().length === 0) {
+      results.push(null);
+      continue;
+    }
+    const output = await extractor(text, { pooling: 'mean', normalize: true });
+    const vec = Array.from(output.data);
+    results.push(vec.some(v => !isFinite(v)) ? null : vec);
+  }
+  return results;
+}
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    console.error('[embedding-server] Idle timeout, shutting down');
+    server.close();
+    process.exit(0);
+  }, IDLE_TIMEOUT_MS);
+}
+
+// Clean up stale socket
+if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
+
+const server = createServer((conn) => {
+  resetIdleTimer();
+  let data = '';
+  conn.on('data', chunk => {
+    data += chunk;
+    // Process when we receive a complete JSON line (newline-delimited)
+    const newlineIdx = data.indexOf('\n');
+    if (newlineIdx !== -1) {
+      const message = data.slice(0, newlineIdx);
+      data = data.slice(newlineIdx + 1);
+      handleRequest(conn, message);
+    }
+  });
+  conn.on('error', () => {}); // Ignore client disconnect errors
+});
+
+async function handleRequest(conn, message) {
+  try {
+    const req = JSON.parse(message);
+    if (req.action === 'health') {
+      conn.end(JSON.stringify({ status: 'ok' }) + '\n');
+    } else if (req.action === 'embed' && req.texts) {
+      const embeddings = await embed(req.texts);
+      conn.end(JSON.stringify({ embeddings }) + '\n');
+    } else {
+      conn.end(JSON.stringify({ error: 'unknown action' }) + '\n');
+    }
+  } catch (e) {
+    try { conn.end(JSON.stringify({ error: e.message }) + '\n'); } catch {}
+  }
+}
+
+// Initialize model, then start listening
+await init();
+server.listen(SOCKET_PATH, () => {
+  console.error(`[embedding-server] Listening on ${SOCKET_PATH}`);
+  resetIdleTimer();
+});
+
+// Handle port/socket already in use (another server instance running)
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error('[embedding-server] Socket already in use, another instance running. Exiting.');
+    process.exit(0);
+  }
+  throw e;
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => { server.close(); process.exit(0); });
+process.on('SIGINT', () => { server.close(); process.exit(0); });
+```
+
+### 8.1.2 임베딩 클라이언트 (embedding-client.mjs)
+
+훅 프로세스에서 임베딩 데몬과 통신하는 경량 클라이언트. 10초 타임아웃 내 응답을 보장한다 (콜드 스타트 시 모델 로딩 대기 포함).
+
+```javascript
+// ~/.self-generation/lib/embedding-client.mjs
+import { createConnection } from 'net';
+
+const SOCKET_PATH = '/tmp/self-gen-embed.sock';
+const TIMEOUT_MS = 10000;
+
+/**
+ * 임베딩 데몬에 벡터 생성 요청
+ * 소켓 연결 실패 시 데몬 자동 시작 후 1회 재시도
+ */
+export async function embedViaServer(texts) {
+  try {
+    return await _sendRequest(texts);
+  } catch (e) {
+    // Connection failed — auto-start daemon and retry once
+    if (e.code === 'ECONNREFUSED' || e.code === 'ENOENT') {
+      await startServer();
+      await new Promise(r => setTimeout(r, 5000)); // Wait for model load
+      return await _sendRequest(texts);
+    }
+    throw e;
+  }
+}
+
+function _sendRequest(texts) {
+  return new Promise((resolve, reject) => {
+    const conn = createConnection(SOCKET_PATH);
+    const timer = setTimeout(() => {
+      conn.destroy();
+      reject(new Error('Embedding server timeout'));
+    }, TIMEOUT_MS);
+
+    let data = '';
+    conn.on('data', chunk => { data += chunk; });
+    conn.on('end', () => {
+      clearTimeout(timer);
+      try {
+        const res = JSON.parse(data);
+        if (res.embeddings) resolve(res.embeddings);
+        else reject(new Error(res.error || 'No embeddings'));
+      } catch (e) { reject(e); }
+    });
+    conn.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+
+    conn.write(JSON.stringify({ action: 'embed', texts }) + '\n');
+  });
+}
+
+/**
+ * 임베딩 데몬 상태 확인
+ * @returns {Promise<boolean>}
+ */
+export function isServerRunning() {
+  return new Promise((resolve) => {
+    const conn = createConnection(SOCKET_PATH);
+    const timer = setTimeout(() => { conn.destroy(); resolve(false); }, 500);
+    conn.on('error', () => { clearTimeout(timer); resolve(false); });
+    conn.on('connect', () => {
+      let data = '';
+      conn.on('data', chunk => { data += chunk; });
+      conn.on('end', () => {
+        clearTimeout(timer);
+        try {
+          resolve(JSON.parse(data).status === 'ok');
+        } catch { resolve(false); }
+      });
+      conn.write(JSON.stringify({ action: 'health' }) + '\n');
+    });
+  });
+}
+
+/**
+ * 임베딩 데몬 시작 (detached background)
+ */
+export async function startServer() {
+  const { spawn } = await import('child_process');
+  const { join } = await import('path');
+  const { homedir } = await import('os');
+  const serverPath = join(homedir(), '.self-generation', 'lib', 'embedding-server.mjs');
+  const child = spawn('node', [serverPath], {
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
 }
 ```
 
@@ -1768,8 +2592,7 @@ function normalizeError(error) {
 // ~/.self-generation/lib/skill-matcher.mjs
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-
-const CACHE_FILE = join(process.env.HOME, '.self-generation', 'data', 'analysis-cache.json');
+import { getDb, vectorSearch, generateEmbeddings } from './db.mjs';
 
 /**
  * 기존 스킬 목록 로드 (전역 + 프로젝트)
@@ -1782,11 +2605,9 @@ export function loadSkills(projectPath) {
   if (existsSync(globalDir)) {
     for (const file of readdirSync(globalDir)) {
       if (file.endsWith('.md')) {
-        skills.push({
-          name: file.replace('.md', ''),
-          scope: 'global',
-          content: readFileSync(join(globalDir, file), 'utf-8')
-        });
+        const content = readFileSync(join(globalDir, file), 'utf-8');
+        const firstParagraph = content.split('\n').find(l => l.trim() && !l.startsWith('#'));
+        skills.push({ name: file.replace('.md', ''), scope: 'global', content, description: firstParagraph?.trim() || null, sourcePath: join(globalDir, file) });
       }
     }
   }
@@ -1797,11 +2618,9 @@ export function loadSkills(projectPath) {
     if (existsSync(projectDir)) {
       for (const file of readdirSync(projectDir)) {
         if (file.endsWith('.md')) {
-          skills.push({
-            name: file.replace('.md', ''),
-            scope: 'project',
-            content: readFileSync(join(projectDir, file), 'utf-8')
-          });
+          const content = readFileSync(join(projectDir, file), 'utf-8');
+          const firstParagraph = content.split('\n').find(l => l.trim() && !l.startsWith('#'));
+          skills.push({ name: file.replace('.md', ''), scope: 'project', content, description: firstParagraph?.trim() || null, sourcePath: join(projectDir, file) });
         }
       }
     }
@@ -1811,41 +2630,48 @@ export function loadSkills(projectPath) {
 }
 
 /**
- * 캐시된 시노님 맵 로드 (P3: v7)
- * AI 배치 분석에서 생성된 스킬별 동의어 목록
+ * 프롬프트와 스킬 간 매칭 (벡터 유사도 + 키워드 폴백)
+ *
+ * v8 변경: loadSynonymMap() 제거 — 벡터 유사도 검색이 시노님 맵의
+ * 의미 매칭을 네이티브하게 대체한다.
+ * v9 변경: claude --print → Transformers.js, 임계값 0.3 → 0.76
  */
-function loadSynonymMap() {
+export async function matchSkill(prompt, skills) {
+  // 1. 벡터 유사도 검색 (skill_embeddings 테이블, 임베딩이 존재하는 경우)
   try {
-    const cache = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
-    return cache.analysis?.synonym_map || {};
-  } catch { return {}; }
+    const embeddings = await generateEmbeddings([prompt]);
+    if (embeddings && embeddings[0]) {
+      const results = vectorSearch('skill_embeddings', 'vec_skill_embeddings', embeddings[0], 1);
+      if (results.length > 0 && results[0].distance < 0.76) {
+        return {
+          name: results[0].name,
+          match: 'vector',
+          confidence: 1 - results[0].distance,
+          scope: skills.find(s => s.name === results[0].name)?.scope || 'global'
+        };
+      }
+    }
+  } catch { /* Vector search not available, fall through to keyword matching */ }
+
+  // 2. 폴백: 키워드 매칭 (기존 로직)
+  return keywordMatch(prompt, skills);
 }
 
 /**
- * 프롬프트와 스킬 간 키워드 매칭
- * 경량 매칭: 스킬 파일 내 "감지된 패턴" 섹션의 예시와 비교
+ * 키워드 기반 스킬 매칭 (폴백)
+ * 스킬 파일 내 "감지된 패턴" 섹션의 예시와 비교
  */
-export function matchSkill(prompt, skills) {
+function keywordMatch(prompt, skills) {
   const promptLower = prompt.toLowerCase();
 
-  // P3: 시노님 맵 매칭 (v7) - AI가 생성한 동의어로 의미 매칭
-  const synonymMap = loadSynonymMap();
   for (const skill of skills) {
-    const synonyms = synonymMap[skill.name] || [];
-    if (synonyms.some(syn => promptLower.includes(syn.toLowerCase()))) {
-      return { name: skill.name, match: 'synonym', confidence: 0.8 };
-    }
-  }
-
-  for (const skill of skills) {
-    // 스킬 파일에서 패턴 예시 추출
     const patterns = extractPatterns(skill.content);
     for (const pattern of patterns) {
-      // 패턴 키워드가 프롬프트에 3개 이상 포함되면 매칭
+      // 패턴 키워드가 프롬프트에 50% 이상 포함되면 매칭
       const patternWords = pattern.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       const matchCount = patternWords.filter(w => promptLower.includes(w)).length;
       if (patternWords.length > 0 && matchCount / patternWords.length >= 0.5) {
-        return skill;
+        return { name: skill.name, match: 'keyword', confidence: matchCount / patternWords.length, scope: skill.scope };
       }
     }
   }
@@ -1853,7 +2679,7 @@ export function matchSkill(prompt, skills) {
   return null;
 }
 
-function extractPatterns(content) {
+export function extractPatterns(content) {
   const patterns = [];
   const lines = content.split('\n');
   let inSection = false;
@@ -1872,30 +2698,41 @@ function extractPatterns(content) {
 
 ```javascript
 // ~/.self-generation/hooks/prompt-logger.mjs (v6 확장)
-import { getLogFile, getProjectName, appendEntry, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, loadConfig, stripPrivateTags } from '../lib/db.mjs';
 import { loadSkills, matchSkill } from '../lib/skill-matcher.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  const config = loadConfig();
+  if (config.enabled === false) process.exit(0);
 
-  // 1. 프롬프트 기록 (기존)
+  // Privacy tag stripping (v9) + collectPromptText check
+  const rawPrompt = config.collectPromptText === false ? '[REDACTED]' : input.prompt;
+  const promptText = stripPrivateTags(rawPrompt);
+
+  // 1. 프롬프트 기록 (events 테이블에 INSERT)
   const entry = {
     v: 1,
     type: 'prompt',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
-    text: input.prompt,
-    charCount: input.prompt.length
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
+    text: promptText,
+    charCount: promptText.length
   };
-  appendEntry(logFile, entry);
+  insertEvent(entry);
 
   // 2. 스킬 자동 감지 (v6 추가)
+  // Note: matchSkill()은 벡터 매칭 시 임베딩 데몬 통신(~5ms warm, ~10s cold)이 필요하므로
+  // insertEvent() 완료 후 best-effort로 시도. 데몬 미실행 시 키워드 폴백이 즉시 동작.
+  // v9: 2s timeout to prevent blocking on daemon cold start (consistent with error-logger)
   const skills = loadSkills(input.cwd);
   if (skills.length > 0) {
-    const matched = matchSkill(input.prompt, skills);
+    const matched = await Promise.race([
+      matchSkill(input.prompt, skills),
+      new Promise(resolve => setTimeout(() => resolve(null), 2000))
+    ]);
     if (matched) {
       const output = {
         hookSpecificOutput: {
@@ -1910,16 +2747,21 @@ try {
   }
 
   // P5: 스킬 사용 이벤트 기록 (v7)
+  // Validate against actual skill names to avoid false positives (e.g., "/usr/bin/..." paths)
   if (input.prompt && input.prompt.startsWith('/')) {
     const skillName = input.prompt.split(/\s+/)[0].slice(1); // "/ts-init args" → "ts-init"
-    appendEntry(logFile, {
-      v: 1,
-      type: 'skill_used',
-      ts: new Date().toISOString(),
-      sessionId: input.session_id,
-      project: getProjectName(input.cwd),
-      skillName
-    });
+    const isActualSkill = skills.some(s => s.name === skillName);
+    if (isActualSkill) {
+      insertEvent({
+        v: 1,
+        type: 'skill_used',
+        ts: new Date().toISOString(),
+        sessionId: input.session_id,
+        project: getProjectName(getProjectPath(input.cwd)),
+        projectPath: getProjectPath(input.cwd),
+        skillName
+      });
+    }
   }
 
   process.exit(0);
@@ -1932,24 +2774,27 @@ try {
 
 ```javascript
 // ~/.self-generation/hooks/subagent-tracker.mjs
-import { getLogFile, getProjectName, appendEntry, readStdin } from '../lib/log-writer.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
 
   const entry = {
     v: 1,
     type: 'subagent_stop',
     ts: new Date().toISOString(),
     sessionId: input.session_id,
-    project: getProjectName(input.cwd),
-    projectPath: input.cwd,
+    project: getProjectName(getProjectPath(input.cwd)),
+    projectPath: getProjectPath(input.cwd),
     agentId: input.agent_id,
     agentType: input.agent_type
+    // v9: success 필드 제거. SubagentStop 공식 stdin에 error 필드가 없어 항상 true였으므로
+    // dead code 방지를 위해 삭제. 9장 스키마 { agentId, agentType }과 일치.
+    // 향후 API에 실패 정보가 추가되면 agent_transcript_path 파싱으로 정확한 판정 구현.
   };
 
-  appendEntry(logFile, entry);
+  insertEvent(entry);
   process.exit(0);
 } catch (e) {
   process.exit(0);
@@ -1964,21 +2809,22 @@ SessionStart에서 이전 세션의 핵심 정보를 주입하여 세션 연속�
 
 ```javascript
 // ~/.self-generation/hooks/session-analyzer.mjs (v6 확장)
-import { getLogFile, getProjectName, readEntries, readStdin } from '../lib/log-writer.mjs';
+import { queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
 try {
-  const input = readStdin();
-  const logFile = getLogFile();
-  const project = getProjectName(input.cwd);
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
+  const projectDir = getProjectPath(input.cwd);
+  const project = getProjectName(projectDir);
 
   // P7: 세션 소스에 따른 컨텍스트 분기 (v7)
   const isResume = input.source === 'resume';
 
   const contextParts = [];
 
-  // 1. 캐시된 AI 분석 결과 주입 (기존)
-  const analysis = getCachedAnalysis(24);
+  // 1. 캐시된 AI 분석 결과 주입 (v9: project 필터 추가)
+  const analysis = getCachedAnalysis(24, project);
   if (analysis && analysis.suggestions?.length > 0) {
     let msg = '[Self-Generation] AI 패턴 분석 결과:\n';
     for (const s of analysis.suggestions.slice(0, 3)) {
@@ -1990,9 +2836,8 @@ try {
     contextParts.push(msg);
   }
 
-  // 2. 이전 세션 컨텍스트 주입 (v6 추가)
-  const recentSummaries = readEntries(logFile, { type: 'session_summary', project })
-    .slice(-1); // 가장 최근 세션 요약 1개
+  // 2. 이전 세션 컨텍스트 주입 (v6 추가, SQL 인덱스 기반 조회)
+  const recentSummaries = queryEvents({ type: 'session_summary', projectPath: projectDir, limit: 1 });
 
   if (recentSummaries.length > 0) {
     const prev = recentSummaries[0];
@@ -2023,6 +2868,14 @@ try {
     contextParts.push(parts.join('\n'));
   }
 
+  // 임베딩 데몬 자동 시작
+  try {
+    const { isServerRunning, startServer } = await import('../lib/embedding-client.mjs');
+    if (!await isServerRunning()) {
+      await startServer();
+    }
+  } catch { /* Embedding daemon optional */ }
+
   if (contextParts.length > 0) {
     const output = {
       hookSpecificOutput: {
@@ -2045,73 +2898,75 @@ try {
 
 ```javascript
 // ~/.self-generation/hooks/pre-tool-guide.mjs
-import { searchErrorKB } from '../lib/error-kb.mjs';
-import { getLogFile, readEntries, readStdin } from '../lib/log-writer.mjs';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-
-const TRACKER_FILE = join(process.env.HOME, '.self-generation', 'data', 'subagent-stats.jsonl');
+import { queryEvents, getDb, readStdin, isEnabled } from '../lib/db.mjs';
 
 try {
-  const input = readStdin();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
   const parts = [];
 
-  // 1. Edit/Write 도구: 대상 파일 관련 과거 에러 검색
+  // 1. Edit/Write 도구: 대상 파일 관련 과거 에러 + 해결 이력 검색
+  // Note: PreToolUse는 동기 블로킹 훅이므로 벡터 검색 대신 텍스트 매칭만 사용 (성능 우선)
   if (['Edit', 'Write'].includes(input.tool_name) && input.tool_input?.file_path) {
     const filePath = input.tool_input.file_path;
-    const logFile = getLogFile();
-    const entries = readEntries(logFile, 200);
-    const fileErrors = entries
-      .filter(e => e.type === 'tool_error' && e.errorRaw?.includes(filePath.split('/').pop()))
-      .slice(-3);
+    const fileName = filePath.split('/').pop();
+    const db = getDb();
 
-    if (fileErrors.length > 0) {
-      const kbResult = searchErrorKB(fileErrors[0].error);
-      if (kbResult) {
-        parts.push(`⚠️ 이 파일 관련 과거 에러 이력: ${kbResult.error}`);
-        parts.push(`   해결 방법: ${JSON.stringify(kbResult.resolution)}`);
-      }
+    // error_kb에서 파일명 관련 해결 이력 직접 조회 (벡터 검색 불필요)
+    const kbResults = db.prepare(`
+      SELECT error_normalized, resolution FROM error_kb
+      WHERE error_normalized LIKE ? AND resolution IS NOT NULL
+      ORDER BY last_used DESC LIMIT 2
+    `).all(`%${fileName}%`);
+
+    for (const kb of kbResults) {
+      parts.push(`⚠️ 이 파일 관련 과거 에러: ${kb.error_normalized}`);
+      try {
+        const res = JSON.parse(kb.resolution);
+        parts.push(`   해결 방법: ${res.resolvedBy || ''} (${res.tool || ''})`);
+        if (res.toolSequence) parts.push(`   해결 경로: ${res.toolSequence.join(' → ')}`);
+      } catch { parts.push(`   해결 방법: ${kb.resolution}`); }
     }
   }
 
-  // 2. Bash 도구: 이전에 실패한 커맨드 경고
+  // 2. Bash 도구: 이전에 실패한 커맨드 경고 (텍스트 매칭, 벡터 검색 불필요)
   if (input.tool_name === 'Bash' && input.tool_input?.command) {
-    const cmd = input.tool_input.command.split(/\s+/)[0];
-    const logFile = getLogFile();
-    const entries = readEntries(logFile, 100);
-    const cmdErrors = entries
-      .filter(e => e.type === 'tool_error' && e.tool === 'Bash' &&
-              e.sessionId === input.session_id);
+    const db = getDb();
+    const recentBashErrors = db.prepare(`
+      SELECT json_extract(data, '$.error') AS error FROM events
+      WHERE type = 'tool_error' AND session_id = ? AND json_extract(data, '$.tool') = 'Bash'
+      ORDER BY ts DESC LIMIT 1
+    `).get(input.session_id);
 
-    if (cmdErrors.length > 0) {
-      const kbResult = searchErrorKB(cmdErrors[cmdErrors.length - 1].error);
+    if (recentBashErrors?.error) {
+      const kbResult = db.prepare(`
+        SELECT error_normalized, resolution FROM error_kb
+        WHERE error_normalized = ? AND resolution IS NOT NULL
+        LIMIT 1
+      `).get(recentBashErrors.error);
+
       if (kbResult) {
-        parts.push(`💡 이 세션에서 Bash 에러 발생 이력: ${kbResult.error}`);
-        if (kbResult.resolution?.toolSequence) {
-          parts.push(`   이전 해결 경로: ${kbResult.resolution.toolSequence.join(' → ')}`);
-        }
+        parts.push(`💡 이 세션에서 Bash 에러 발생 이력: ${kbResult.error_normalized}`);
+        try {
+          const resolution = JSON.parse(kbResult.resolution);
+          if (resolution?.toolSequence) {
+            parts.push(`   이전 해결 경로: ${resolution.toolSequence.join(' → ')}`);
+          }
+        } catch {}
       }
     }
   }
 
-  // 3. Task 도구: 서브에이전트 성능 데이터 안내
-  if (input.tool_name === 'Task' && input.tool_input?.subagent_type) {
-    const agentType = input.tool_input.subagent_type;
-    if (existsSync(TRACKER_FILE)) {
-      const lines = readFileSync(TRACKER_FILE, 'utf-8').trim().split('\n');
-      const stats = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-      const agentStats = stats.filter(s => s.agentType === agentType).slice(-20);
-      const failures = agentStats.filter(s => !s.success);
-      if (agentStats.length >= 5 && failures.length / agentStats.length > 0.3) {
-        parts.push(`📊 ${agentType} 최근 실패율: ${Math.round(failures.length / agentStats.length * 100)}% (${agentStats.length}회 중 ${failures.length}회)`);
-        parts.push(`   더 높은 티어의 에이전트 사용을 고려하세요.`);
-      }
-    }
-  }
+  // 3. Task 도구: 서브에이전트 실패율 경고
+  // v9: Disabled — SubagentStop API does not provide error/success information.
+  // The success field was removed from subagent_stop events (see subagent-tracker.mjs).
+  // To re-enable, implement agent_transcript_path parsing for failure detection,
+  // then query the resulting field here.
+  // if (input.tool_name === 'Task' && input.tool_input?.subagent_type) { ... }
 
   if (parts.length > 0) {
     process.stdout.write(JSON.stringify({
-      hookSpecificOutput: { additionalContext: parts.join('\n') }
+      hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: parts.join('\n') }
     }));
   }
   process.exit(0);
@@ -2126,15 +2981,15 @@ try {
 
 ```javascript
 // ~/.self-generation/hooks/subagent-context.mjs
-import { searchErrorKB } from '../lib/error-kb.mjs';
-import { getLogFile, getProjectName, readEntries, readStdin } from '../lib/log-writer.mjs';
+import { queryEvents, getDb, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
 const CODE_AGENTS = ['executor', 'executor-low', 'executor-high', 'architect', 'architect-medium',
   'designer', 'designer-high', 'build-fixer', 'build-fixer-low'];
 
 try {
-  const input = readStdin();
+  const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
   const agentType = input.agent_type || '';
 
   // 코드 작업 에이전트에만 컨텍스트 주입
@@ -2143,35 +2998,39 @@ try {
   }
 
   const parts = [];
-  const project = getProjectName(input.cwd);
+  const projectDir = getProjectPath(input.cwd);
+  const project = getProjectName(projectDir);
 
-  // 1. 프로젝트별 최근 에러 패턴 주입
-  const logFile = getLogFile();
-  const entries = readEntries(logFile, 50);
-  const projectErrors = entries
-    .filter(e => e.type === 'tool_error' && e.project === project)
-    .slice(-3);
+  // 1. 프로젝트별 최근 에러 패턴 주입 (SQL 인덱스 기반 조회)
+  const projectErrors = queryEvents({ type: 'tool_error', projectPath: projectDir, limit: 3 });
 
   if (projectErrors.length > 0) {
     parts.push('이 프로젝트의 최근 에러 패턴:');
+    // v9: text-only search to avoid SubagentStart delay from vector search loop
+    // searchErrorKB() with vector fallback could take ~5ms×3 = 15ms + embedding overhead
+    const db = getDb();
     for (const err of projectErrors) {
       parts.push(`- ${err.error} (${err.tool})`);
-      const kb = searchErrorKB(err.error);
+      const kb = db.prepare(`
+        SELECT resolution FROM error_kb
+        WHERE error_normalized = ? AND resolution IS NOT NULL
+        ORDER BY use_count DESC LIMIT 1
+      `).get(err.error);
       if (kb?.resolution) {
         parts.push(`  해결: ${JSON.stringify(kb.resolution).slice(0, 150)}`);
       }
     }
   }
 
-  // 2. 캐시된 AI 분석의 관련 규칙 주입
-  const analysis = getCachedAnalysis(48); // 48시간 이내 캐시
+  // 2. 캐시된 AI 분석의 관련 규칙 주입 (v9: project 필터)
+  const analysis = getCachedAnalysis(48, project); // 48시간 이내, 프로젝트별
   if (analysis?.suggestions) {
     const rules = analysis.suggestions
       .filter(s => s.type === 'claude_md' && (!s.project || s.project === project))
       .slice(0, 3);
     if (rules.length > 0) {
       parts.push('적용할 프로젝트 규칙:');
-      rules.forEach(r => parts.push(`- ${r.content || r.description}`));
+      rules.forEach(r => parts.push(`- ${r.rule || r.summary}`));
     }
   }
 
@@ -2179,7 +3038,7 @@ try {
     // 최대 500자로 제한
     const context = parts.join('\n').slice(0, 500);
     process.stdout.write(JSON.stringify({
-      hookSpecificOutput: { additionalContext: context }
+      hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: context }
     }));
   }
   process.exit(0);
@@ -2197,10 +3056,11 @@ try {
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Edit|Write|Bash|Task",
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.self-generation/hooks/pre-tool-guide.mjs"
+            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs"
           }
         ]
       }
@@ -2210,7 +3070,7 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.self-generation/hooks/subagent-context.mjs"
+            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs"
           }
         ]
       }
@@ -2229,6 +3089,106 @@ try {
 }
 ```
 
+#### 통합 settings.json (Phase 1~5 전체)
+
+아래는 모든 Phase의 훅을 포함한 최종 `~/.claude/settings.json` 예시다. 구현 시 이 통합 버전을 사용하라.
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/prompt-logger.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/tool-logger.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/error-logger.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/session-summary.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.self-generation/hooks/session-analyzer.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 > **참고**: UserPromptSubmit, PostToolUseFailure 훅은 기존 등록을 유지하며
 > 스크립트 내부에서 실시간 기능이 확장된다. 별도 훅 등록 불필요.
 
@@ -2236,141 +3196,215 @@ try {
 
 ## 9. 데이터 스키마
 
-### 9.1 prompt-log.jsonl 이벤트 타입
+> **설계 변경 (v8)**: JSONL 파일 기반 스키마를 SQLite 테이블 스키마로 전환.
+> 모든 데이터는 `~/.self-generation/data/self-gen.db` 단일 파일에 통합 저장된다.
 
-#### prompt (프롬프트 기록)
+### 9.1 events 테이블 (이벤트 로그)
 
-```typescript
-interface PromptEntry {
-  v: 1;                   // 스키마 버전 (향후 마이그레이션용)
-  type: 'prompt';
-  ts: string;             // ISO 8601
-  sessionId: string;
-  project: string;        // 프로젝트 디렉토리명 (예: "my-app")
-  projectPath: string;    // 전체 경로 (예: "/Users/sungwon/projects/my-app")
-  text: string;           // 프롬프트 원문
-  charCount: number;
-  // v5: keywords, intent, lang 제거 → AI 분석 단계에서 의미 기반으로 처리
-}
+`prompt-log.jsonl`을 대체하며, 모든 이벤트 타입을 하나의 테이블에 저장한다.
+공통 필드는 컬럼으로, 타입별 페이로드는 `data` JSON 컬럼에 저장한다.
+
+```sql
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  v INTEGER DEFAULT 1,              -- 스키마 버전
+  type TEXT NOT NULL,               -- 'prompt', 'tool_use', 'tool_error', 'skill_used',
+                                    -- 'subagent_stop', 'session_summary'
+  ts TEXT NOT NULL,                 -- ISO 8601
+  session_id TEXT NOT NULL,
+  project TEXT,                     -- 프로젝트 디렉토리명 (표시용)
+  project_path TEXT,                -- 전체 경로 (정규 식별자)
+  data JSON NOT NULL                -- 타입별 페이로드
+);
+CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
+CREATE INDEX IF NOT EXISTS idx_events_project_type ON events(project_path, type, ts);
+CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
+
+-- DESIGN CONSTRAINT (v9): events table is INSERT-only (append-only log).
+-- UPDATE is prohibited to maintain FTS5 index consistency (no UPDATE trigger).
+-- Deletion only occurs via pruneOldEvents() which fires the DELETE trigger.
+
+-- FTS5 full-text search (v9: QMD trigger sync pattern)
+-- Enables keyword search on prompt text and error messages
+CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+  type, text, content='events', content_rowid='id'
+);
+-- Triggers auto-sync FTS index on INSERT/DELETE (see initDb in db.mjs)
 ```
 
-#### tool_use (도구 사용)
+> **설계 변경 (v9)**: QMD의 FTS5 trigger 동기화 패턴을 차용.
+> `events_fts` 가상 테이블이 프롬프트 텍스트와 에러 메시지에 대한 키워드 검색을 지원한다.
+> INSERT/DELETE trigger로 원본 테이블과 FTS 인덱스가 자동 동기화된다.
+> 활용 예: `SELECT * FROM events_fts WHERE events_fts MATCH 'typescript eslint'`
+
+#### data JSON 페이로드 (타입별)
 
 ```typescript
-interface ToolUseEntry {
-  v: 1;                   // 스키마 버전
-  type: 'tool_use';
-  ts: string;
-  sessionId: string;
-  project: string;        // 프로젝트 디렉토리명 (표시용)
-  projectPath: string;    // 전체 경로 (정규 식별자)
-  tool: string;           // 'Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob', 'Task', ...
-  meta: ToolMeta;         // 도구별 핵심 메타 (보안 고려, 최소 정보만)
-  success: true;
+// type: 'prompt'
+{ text: string; charCount: number }
+
+// type: 'tool_use'
+{ tool: string; meta: ToolMeta; success: true }
+
+// type: 'tool_error'
+{ tool: string; error: string; errorRaw: string }
+
+// type: 'session_summary'
+{
+  promptCount: number;
+  toolCounts: Record<string, number>;
+  toolSequence: string[];
+  errorCount: number;
+  uniqueErrors: string[];
+  lastPrompts: string[];
+  lastEditedFiles: string[];
+  reason: string;
 }
 
+// type: 'subagent_stop'
+{ agentId: string; agentType: string }
+
+// type: 'skill_used'
+{ skillName: string }
+
 type ToolMeta =
-  | { command: string }        // Bash: 첫 단어만
-  | { file: string }           // Read/Write/Edit
-  | { pattern: string }        // Grep/Glob
-  | { agentType: string; model?: string }  // Task
+  | { command: string }                      // Bash: 첫 단어만
+  | { file: string }                         // Read/Write/Edit
+  | { pattern: string }                      // Grep/Glob
+  | { agentType: string; model?: string }    // Task
   | {};
 ```
 
-#### tool_error (도구 에러)
+### 9.2 error_kb 테이블 (에러 해결 이력 + 벡터 임베딩)
 
-```typescript
-interface ToolErrorEntry {
-  v: 1;                   // 스키마 버전
-  type: 'tool_error';
-  ts: string;
-  sessionId: string;
-  project: string;        // 프로젝트 디렉토리명 (표시용)
-  projectPath: string;    // 전체 경로 (정규 식별자)
-  tool: string;
-  error: string;          // 정규화된 에러 (PATH, N, STR 치환)
-  errorRaw: string;       // 원본 에러 (최대 500자)
-}
+`error-kb.jsonl`을 대체하며, sqlite-vec 벡터 유사도 검색을 지원한다.
+
+```sql
+CREATE TABLE IF NOT EXISTS error_kb (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  error_normalized TEXT NOT NULL,    -- 정규화된 에러 메시지
+  error_raw TEXT,                    -- 원본 에러 (최대 500자)
+  resolution TEXT,                   -- 해결 방법 (JSON)
+  resolved_by TEXT,                  -- 해결 방식: 'success_after_error', 'cross_tool_resolution'
+  tool_sequence TEXT,                -- 해결 도구 시퀀스 (JSON array)
+  use_count INTEGER DEFAULT 0,      -- KB 검색으로 활용된 횟수
+  last_used TEXT                     -- 마지막 활용 시각
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
+
+-- Vector search virtual table (sqlite-vec)
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_error_kb USING vec0(
+  error_kb_id INTEGER PRIMARY KEY,
+  embedding float[384]
+);
 ```
 
-#### session_summary (세션 요약)
+> **임베딩 전략**: `error_kb` 테이블 INSERT 시 임베딩은 생성하지 않고,
+> SessionEnd 배치에서 임베딩 데몬을 통해 `vec_error_kb` 가상 테이블에 비동기 생성된다.
+> 실시간 훅의 벡터 검색도 임베딩 데몬(Unix socket)을 통해 ~5ms로 처리된다.
+> 데몬 미실행 시 텍스트 매칭(정확+접두사)으로 폴백한다.
+> 임계값: distance < 0.76 (고신뢰), 0.76~0.85 (저신뢰+키워드 검증), >= 0.85 (매칭 없음)
+>
+> **검색 순서 (v9)**: QMD의 Strong-signal shortcut 패턴을 차용.
+> 정확 텍스트 매칭(~1ms) → 접두사 매칭(~2ms) → 벡터 유사도(~5ms) 순으로 검색.
+> 정확 매칭이 성공하면 벡터 검색을 건너뛰어 평균 응답 시간을 ~80% 절약한다.
 
-```typescript
-interface SessionSummaryEntry {
-  v: 1;                   // 스키마 버전
-  type: 'session_summary';
-  ts: string;
-  sessionId: string;
-  project: string;        // 프로젝트 디렉토리명 (표시용)
-  projectPath: string;    // 전체 경로 (정규 식별자)
-  promptCount: number;
-  toolCounts: Record<string, number>;  // { Bash: 5, Read: 12 }
-  toolSequence: string[];              // 도구 호출 순서
-  errorCount: number;
-  uniqueErrors: string[];
-  intents: string[];                   // 인텐트 분류 (legacy)
-  lastPrompts: string[];               // P2: 마지막 3개 프롬프트 요약 (각 100자)
-  lastEditedFiles: string[];           // P2: 마지막 수정 파일 5개
-  reason: string;                      // P8: 세션 종료 사유
-  // v5: topKeywords 제거 → AI 분석 단계에서 의미 기반으로 처리
-}
+### 9.3 feedback 테이블 (제안 피드백)
+
+`feedback.jsonl`을 대체한다.
+
+```sql
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  v INTEGER DEFAULT 1,              -- 스키마 버전
+  ts TEXT NOT NULL,
+  suggestion_id TEXT NOT NULL,
+  action TEXT NOT NULL,             -- 'accepted', 'rejected', 'dismissed'
+  suggestion_type TEXT,             -- 'skill', 'claude_md', 'hook'
+  summary TEXT
+);
 ```
 
-#### subagent_stop (서브에이전트 종료, v6 추가)
+### 9.4 analysis_cache 테이블 (AI 분석 캐시)
 
-```typescript
-interface SubagentStopEntry {
-  v: 1;
-  type: 'subagent_stop';
-  ts: string;
-  sessionId: string;
-  project: string;
-  projectPath: string;
-  agentId: string;
-  agentType: string;
-}
+`analysis-cache.json`을 대체한다. 여러 프로젝트/기간의 캐시를 보관할 수 있다.
+
+> **설계 변경 (v9)**: QMD의 Content-Addressable Storage 패턴을 차용.
+> `input_hash` 컬럼(SHA-256)을 추가하여 동일 입력 데이터에 대한 재분석을 방지한다.
+> 이벤트가 변경되지 않았으면(동일 해시) 캐시된 분석 결과를 재사용한다.
+
+```sql
+CREATE TABLE IF NOT EXISTS analysis_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  project TEXT,                     -- 'all' 또는 프로젝트명
+  days INTEGER,                     -- 분석 기간 (일)
+  input_hash TEXT,                  -- SHA-256 of input events (v9, content-addressable)
+  analysis JSON NOT NULL            -- 전체 분석 결과
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+  ON analysis_cache(project, days, input_hash);
 ```
 
-#### skill_used (P5: 스킬 사용 추적)
+> **input_hash NULL 정책 (v9)**: `input_hash`는 nullable이다.
+> v8 이전에 저장된 캐시 레코드나, 수동 CLI 실행(`bin/analyze.mjs`)에서 해시 계산을 생략한 경우
+> NULL이 될 수 있다. SQLite의 UNIQUE 제약은 NULL을 고유값으로 취급하지 않으므로,
+> `input_hash`가 NULL인 레코드는 중복 삽입이 가능하다. 이는 의도된 동작이며,
+> `INSERT OR REPLACE`가 동일 `(project, days, input_hash)` 키를 덮어쓰므로 무한 증가하지 않는다.
+> 다만 삭제된 프로젝트의 오래된 캐시는 잔류할 수 있으며, 필요시 수동 정리한다.
+> 새 분석은 항상 해시를 포함해야 하며(`computeInputHash()` 사용 필수),
+> NULL 해시 레코드는 캐시 히트 대상에서 제외된다 (WHERE input_hash = ? 조건).
+>
+> **캐시 히트 로직 (v9)**: AI 분석 실행 전 입력 이벤트의 SHA-256 해시를 계산하고,
+> `analysis_cache`에서 동일 `(project, days, input_hash)` 조합을 조회한다.
+> 히트 시 `claude --print` 호출을 스킵하여 API 비용과 시간을 절약한다.
+>
+> ```javascript
+> import { createHash } from 'crypto';
+>
+> function computeInputHash(events) {
+>   // Include data payload for content-level dedup (not just metadata)
+>   const content = events.map(e =>
+>     `${e.type}:${e.ts}:${e.session_id}:${JSON.stringify(e.data)}`
+>   ).join('\n');
+>   return createHash('sha256').update(content).digest('hex');
+> }
+>
+> // In ai-analyzer.mjs, before calling claude --print:
+> const hash = computeInputHash(events);
+> const cached = db.prepare(
+>   'SELECT analysis FROM analysis_cache WHERE project = ? AND days = ? AND input_hash = ?'
+> ).get(project, days, hash);
+> if (cached) return JSON.parse(cached.analysis); // Cache hit — skip AI call
+> ```
 
-```typescript
-interface SkillUsedEntry {
-  v: 1;
-  type: 'skill_used';
-  ts: string;                          // ISO 8601
-  sessionId: string;
-  project: string;
-  skillName: string;                   // 사용된 스킬 이름
-}
+### 9.5 skill_embeddings 테이블 (스킬 벡터 임베딩, v8 신규)
+
+벡터 기반 스킬-프롬프트 매칭을 위한 테이블. AI 배치 분석의 `synonym_map`을 대체한다.
+
+```sql
+CREATE TABLE IF NOT EXISTS skill_embeddings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,         -- 스킬 이름
+  source_path TEXT NOT NULL,        -- 스킬 파일 경로
+  description TEXT,                 -- 스킬 설명
+  keywords TEXT,                    -- 추출된 키워드 (JSON array)
+  updated_at TEXT NOT NULL
+);
+
+-- Vector search virtual table (sqlite-vec)
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
+  skill_id INTEGER PRIMARY KEY,
+  embedding float[384]
+);
 ```
 
-### 9.2 error-kb.jsonl (에러 해결 이력, v6 추가)
+> **스킬 설명 이중 언어**: paraphrase-multilingual 모델은 한국어→영어 교차 의미 검색이 약하므로,
+> `description` 필드에 한국어와 영어를 모두 포함한다.
+> 예: "Docker 이미지 빌드 / Build Docker images and push to registry"
 
-```typescript
-interface ErrorKBEntry {
-  v: 1;
-  ts: string;
-  error: string;          // 정규화된 에러 메시지
-  resolution: string;     // 해결 방법 설명
-  useCount: number;       // KB 검색으로 활용된 횟수
-}
-```
-
-### 9.3 feedback.jsonl
-
-```typescript
-interface FeedbackEntry {
-  v: 1;                   // 스키마 버전
-  ts: string;
-  suggestionId: string;
-  suggestionType?: 'skill' | 'claude_md' | 'hook';
-  summary?: string;
-  action: 'accepted' | 'rejected' | 'dismissed';
-  // v5: patternKey 제거 → AI가 피드백 이력을 컨텍스트로 받아 직접 판단
-}
-```
-
-### 9.4 config.json
+### 9.6 config.json
 
 ```json
 {
@@ -2380,12 +3414,29 @@ interface FeedbackEntry {
   "analysisOnSessionEnd": true,
   "analysisDays": 7,
   "analysisCacheMaxAgeHours": 24,
-  "maxLogSizeBytes": 50000000
+  "dbPath": "~/.self-generation/data/self-gen.db",
+  "embedding": {
+    "enabled": true,
+    "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    "dimensions": 384,
+    "threshold": 0.76,
+    "batchSize": 50,
+    "modelCacheDir": "~/.self-generation/models/",
+    "server": {
+      "socketPath": "/tmp/self-gen-embed.sock",
+      "idleTimeoutMinutes": 30,
+      "clientTimeoutMs": 10000
+    }
+  }
 }
 ```
 
 > **참고 (v5)**: 정적 임계값(`thresholds`)은 제거됨. AI 분석이 피드백 이력을
 > 컨텍스트로 받아 제안 품질을 자체 조정하므로 수동 임계값 튜닝이 불필요하다.
+>
+> **참고 (v8)**: `maxLogSizeBytes` 제거됨. SQLite는 파일 로테이션이 불필요하며,
+> `retentionDays`에 따른 `pruneOldEvents()`로 데이터 정리를 수행한다.
+> `dbPath`, `embedding` 설정이 추가되었다.
 
 ---
 
@@ -2395,10 +3446,10 @@ interface FeedbackEntry {
 
 | 원칙 | 구현 |
 |------|------|
-| 로컬 전용 | 모든 데이터는 `~/.self-generation/data/`에만 저장 |
-| 네트워크 전송 없음 | 분석은 로컬에서만 실행, 외부 API 호출 없음 |
+| 로컬 저장 | 모든 수집 데이터는 `~/.self-generation/data/self-gen.db` (SQLite)에만 저장 |
+| 최소 네트워크 | 수집·검색은 완전 로컬. AI 분석(`claude --print`)만 Anthropic API를 통해 요약 데이터 전송. `collectPromptText: false` 시 프롬프트 원문 미포함 |
 | 최소 수집 | 도구 입력의 전체가 아닌 메타 정보만 기록 |
-| 삭제 가능 | `rm -rf ~/.self-generation/data/`로 완전 삭제 |
+| 삭제 가능 | `rm ~/.self-generation/data/self-gen.db*`로 완전 삭제 (WAL/SHM 포함) |
 
 ### 10.2 보안 고려사항
 
@@ -2416,20 +3467,57 @@ interface FeedbackEntry {
   ✗ 도구 응답 본문
   ✗ 환경 변수
   ✗ .env, credentials 등 민감 파일 경로
+  ✗ <private>...</private> 태그로 감싼 프롬프트 내용 (v9, [PRIVATE]로 치환)
 ```
+
+> **설계 변경 (v9)**: claude-mem의 `<private>` 태그 패턴을 차용.
+> 사용자가 프롬프트에서 `<private>비밀번호는 abc123</private>`처럼 감싸면
+> DB에는 `[PRIVATE]`로 치환되어 저장된다. Hook 레이어(edge)에서 처리하므로
+> 민감 정보가 DB에 도달하지 않는다.
 
 ### 10.3 데이터 최소화 모드
 
 `config.json`에서 `collectPromptText: false` 설정 시:
 
-```jsonl
-{"type":"prompt","ts":"...","sessionId":"abc","text":"[REDACTED]","keywords":["typescript","프로젝트","초기화"],"intent":"setup","charCount":25}
+```sql
+-- events 테이블의 data JSON 컬럼에 text가 "[REDACTED]"로 저장됨
+INSERT INTO events (v, type, ts, session_id, project, project_path, data)
+VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
+  '{"text":"[REDACTED]","charCount":25}');
 ```
 
 ### 10.4 데이터 위치
 
 전역 `~/.self-generation/`은 홈 디렉토리에 있으므로 프로젝트 git에 포함되지 않는다.
-별도의 gitignore 설정이 불필요하다.
+별도의 gitignore 설정이 불필요하다. SQLite DB 파일(`self-gen.db`)과 WAL/SHM 파일이 `data/` 디렉토리에 저장된다.
+
+### 10.5 비활성화 및 제거 (v9)
+
+**일시 비활성화** (데이터 보존):
+```bash
+# config.json에서 enabled: false 설정
+node -e "
+const f = require('os').homedir() + '/.self-generation/config.json';
+const c = JSON.parse(require('fs').readFileSync(f,'utf8'));
+c.enabled = false;
+require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
+"
+# 임베딩 데몬은 30분 idle 후 자동 종료
+```
+
+**완전 제거**:
+```bash
+# 1. settings.json에서 훅 제거 (install.mjs --uninstall 사용)
+node ~/.self-generation/bin/install.mjs --uninstall
+
+# 2. 임베딩 데몬 즉시 종료
+rm -f /tmp/self-gen-embed.sock
+
+# 3. 모든 데이터 및 코드 삭제
+rm -rf ~/.self-generation/
+```
+
+> `--uninstall`은 `settings.json`에서 `.self-generation` 경로를 포함하는 훅만 선택적으로 제거하고, 다른 훅은 보존한다.
 
 ---
 
@@ -2438,20 +3526,20 @@ interface FeedbackEntry {
 ### Phase 1: 데이터 수집
 
 ```
-목표: prompt-log.jsonl에 이벤트가 쌓이는 것까지
+목표: self-gen.db events 테이블에 이벤트가 쌓이는 것까지
 
 작업:
-  1. ~/.self-generation/ 디렉토리 구조 생성
-  2. lib/log-writer.mjs (JSONL 유틸)
-  3. hooks/prompt-logger.mjs (UserPromptSubmit)
-  4. hooks/tool-logger.mjs (PostToolUse)
-  5. hooks/error-logger.mjs (PostToolUseFailure)
-  6. hooks/session-summary.mjs (SessionEnd, 요약만)
-  7. ~/.claude/settings.json에 훅 등록
-  8. 테스트: 실제 세션에서 로그 수집 확인
+  0. bin/install.mjs 실행 (디렉토리, package.json, 의존성, settings.json 자동 설정)
+     package.json: { "type": "module", deps: better-sqlite3, sqlite-vec, @xenova/transformers }
+  1. lib/db.mjs (SQLite 연결, 스키마 초기화, WAL 모드)
+  2. hooks/prompt-logger.mjs (UserPromptSubmit)
+  3. hooks/tool-logger.mjs (PostToolUse)
+  4. hooks/error-logger.mjs (PostToolUseFailure)
+  5. hooks/session-summary.mjs (SessionEnd, 요약만)
+  6. 테스트: 실제 세션에서 DB 수집 확인
 
 산출물:
-  - ~/.self-generation/data/prompt-log.jsonl (이벤트 수집 시작)
+  - ~/.self-generation/data/self-gen.db (이벤트 수집 시작)
 ```
 
 ### Phase 2: AI 기반 패턴 분석
@@ -2461,15 +3549,16 @@ interface FeedbackEntry {
 
 작업:
   1. prompts/analyze.md (AI 분석 프롬프트 템플릿)
-  2. lib/ai-analyzer.mjs (claude --print 실행, 캐시 관리)
+  2. lib/ai-analyzer.mjs (claude --print 실행, analysis_cache 테이블 저장)
   3. bin/analyze.mjs (CLI 분석 도구)
-  4. hooks/session-summary.mjs 확장 (AI 분석 비동기 트리거)
-  5. hooks/session-analyzer.mjs (SessionStart 캐시 주입)
+  4. hooks/session-summary.mjs 확장 (AI 분석 비동기 트리거 + Transformers.js 배치 임베딩 생성)
+  5. hooks/session-analyzer.mjs (SessionStart DB 캐시 주입)
   6. 테스트: 실제 데이터로 AI 분석 결과 검증
 
 산출물:
   - CLI로 AI 기반 온디맨드 패턴 분석 가능
   - 세션 종료 시 자동 분석 → 다음 세션 시작 시 제안 주입
+  - 에러 KB 임베딩 배치 생성 (벡터 검색 준비)
 ```
 
 ### Phase 3: 제안 적용
@@ -2496,12 +3585,12 @@ interface FeedbackEntry {
 목표: 피드백을 AI 분석에 반영하여 제안 품질 향상
 
 작업:
-  1. lib/feedback-tracker.mjs (채택/거부 추적 + 요약 생성)
+  1. lib/feedback-tracker.mjs (채택/거부 추적 + 요약 생성, feedback 테이블)
   2. AI 분석 프롬프트에 피드백 요약 주입
   3. 테스트: 피드백 반영 후 제안 품질 변화 확인
 
 산출물:
-  - feedback.jsonl
+  - feedback 테이블 (피드백 기록)
   - AI가 사용자 선호도를 학습하는 자기 개선 사이클
 ```
 
@@ -2511,17 +3600,19 @@ interface FeedbackEntry {
 목표: 세션 내 즉시 도움 제공 (배치 분석의 보완)
 
 작업:
-  1. lib/error-kb.mjs (에러 KB 검색/기록)
-  2. lib/skill-matcher.mjs (스킬-프롬프트 매칭)
-  3. hooks/error-logger.mjs 확장 (에러 KB 실시간 검색)
-  4. hooks/prompt-logger.mjs 확장 (스킬 자동 감지)
-  5. hooks/subagent-tracker.mjs (서브에이전트 성능 추적)
-  6. hooks/session-analyzer.mjs 확장 (이전 세션 컨텍스트 주입)
-  7. 테스트: 에러 재발 시 KB 즉시 안내 확인
+  1. lib/error-kb.mjs (에러 KB 벡터 검색/기록, error_kb 테이블)
+  2. lib/skill-matcher.mjs (벡터 기반 스킬-프롬프트 매칭, skill_embeddings 테이블)
+  3. lib/embedding-server.mjs (임베딩 데몬 서버, Unix socket, 모델 상주)
+  4. lib/embedding-client.mjs (임베딩 클라이언트, 훅용 소켓 통신)
+  5. hooks/error-logger.mjs 확장 (에러 KB 실시간 벡터 검색)
+  6. hooks/prompt-logger.mjs 확장 (스킬 자동 감지)
+  7. hooks/subagent-tracker.mjs (서브에이전트 성능 추적)
+  8. hooks/session-analyzer.mjs 확장 (이전 세션 컨텍스트 주입 + 임베딩 데몬 자동 시작)
+  9. 테스트: 에러 재발 시 KB 즉시 안내 확인 (벡터 + 텍스트 폴백)
 
 산출물:
-  - 에러 발생 즉시 과거 해결 이력 안내
-  - 기존 스킬 자동 추천
+  - 에러 발생 즉시 벡터 유사도 기반 해결 이력 안내
+  - 벡터 기반 기존 스킬 자동 추천
   - 세션 간 컨텍스트 연속성
   - 서브에이전트 사용 최적화 데이터
 ```
@@ -2537,14 +3628,42 @@ interface FeedbackEntry {
 도구 사용 (PostToolUse)      ─┼─→  claude --print  ─→  커스텀 스킬
 도구 에러 (PostToolUseFailure)┤    (AI 의미 분석)       (.claude/commands/ 스킬)
 세션 요약 (SessionEnd)       ─┤                    ─→  CLAUDE.md 지침
-피드백 이력 (feedback.jsonl) ─┘                    ─→  훅 워크플로우
+피드백 이력 (feedback 테이블) ─┘                   ─→  훅 워크플로우
+                              │
+                              └─→  배치 임베딩 생성 — Transformers.js (error_kb, skill_embeddings)
 
 [실시간 어시스턴스 (세션 내)]
-에러 발생 ─────────────────→ 에러 KB 검색 ──→  즉시 해결 제안
-프롬프트 입력 ─────────────→ 스킬 매칭   ──→  기존 스킬 안내
-서브에이전트 종료 ─────────→ 성능 추적   ──→  사용 최적화 데이터
-세션 시작 ─────────────────→ 이전 세션   ──→  컨텍스트 연속성
+에러 발생 ─────────────────→ 벡터 유사도 KB 검색 ──→  즉시 해결 제안
+프롬프트 입력 ─────────────→ 벡터 스킬 매칭     ──→  기존 스킬 안내
+서브에이전트 종료 ─────────→ 성능 추적          ──→  사용 최적화 데이터
+세션 시작 ─────────────────→ 이전 세션          ──→  컨텍스트 연속성
 ```
+
+### 구현 가이드: 파일별 최종 버전 매핑 (v9)
+
+> 본 문서는 Phase별로 기본 버전과 확장 버전을 모두 수록한다. **구현 시 아래 테이블의 "최종 버전" 절의 코드를 사용하라.** Phase 1 기본 버전은 설계 이해 참고용이며, 실제 구현에는 사용하지 않는다.
+
+| 파일 | Phase 1 기본 (참고용) | 최종 버전 (구현용) | 비고 |
+|------|---------------------|-------------------|------|
+| `hooks/prompt-logger.mjs` | 4.3절 (라인 771) | **8.2절 v6** (라인 2546) | v6가 스킬 감지, privacy tag 포함 |
+| `hooks/tool-logger.mjs` | 4.4절 (라인 808) | **4.4절 그대로** | Phase 1 = 최종 (확장 없음) |
+| `hooks/error-logger.mjs` | 4.5절 (라인 933) | **8.3절 v6** (라인 2174) | v6가 에러 KB 검색 포함 |
+| `hooks/session-summary.mjs` | 4.6절 (라인 947) | **5.4절** (라인 1346) | 확장 버전이 AI 분석+배치 임베딩 포함 |
+| `hooks/session-analyzer.mjs` | — | **5.5절** (라인 1496) | Phase 2부터 신규 |
+| `hooks/pre-tool-guide.mjs` | — | **8.5절** (라인 2768) | Phase 5부터 신규 |
+| `hooks/subagent-tracker.mjs` | — | **8.4절** (라인 2623) | Phase 5부터 신규 |
+| `hooks/subagent-context.mjs` | — | **8.6절** (라인 2835) | Phase 5부터 신규 |
+| `lib/db.mjs` | 3절 (라인 345) | **3절 그대로** | 단일 버전 |
+| `lib/ai-analyzer.mjs` | — | **5절** (라인 1127) | Phase 2부터 신규 |
+| `lib/error-kb.mjs` | — | **8.1절** (라인 2062) | Phase 5부터 신규 |
+| `lib/skill-matcher.mjs` | — | **8.2절** (라인 2501) | Phase 5부터 신규 |
+| `lib/embedding-server.mjs` | — | **8.8절** (라인 2226) | Phase 5부터 신규 |
+| `lib/embedding-client.mjs` | — | **8.9절** (라인 2341) | Phase 5부터 신규 |
+| `lib/feedback-tracker.mjs` | — | **7.1절** (라인 1874) | Phase 4부터 신규 |
+| `bin/install.mjs` | — | **6.1.2절** | v9 신규 |
+| `bin/apply.mjs` | — | **6.1절** (라인 1665) | Phase 3부터 신규 |
+| `bin/dismiss.mjs` | — | **6.1.1절** (라인 1839) | Phase 3부터 신규 |
+| `bin/analyze.mjs` | — | **5.3절** (라인 1549) | Phase 2부터 신규 |
 
 ### 검증 이력 요약
 
@@ -2561,7 +3680,7 @@ v1~v4 설계 과정에서 총 4회의 Opus 아키텍트 검증을 수행하여 2
 
 v6 이후 추가 검증에서 2건의 HIGH 구조적 결함(recordResolution 미연결, getFeedbackSummary 미연결)을 발견하고 수정했다.
 
-v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, 일반 패턴 필터링 등)는 v5의 AI 분석 전환으로 대부분 해소되었다. 향후 개선 후보로 제안된 워크플로우 자동 적용(P6), SessionStart source 활용(P7), SessionEnd reason 활용(P8), tool_response 활용은 v7에서 구현되었다.
+v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, 일반 패턴 필터링 등)는 v5의 AI 분석 전환으로 대부분 해소되었다. 향후 개선 후보로 제안된 워크플로우 자동 적용(P6), SessionStart source 활용(P7), SessionEnd reason 활용(P8), tool_response 활용은 v7에서 구현되었다. v8에서 JSONL 저장소를 SQLite + sqlite-vec로 전환하여 대용량 JSONL 리스크를 완전히 해소하고, 벡터 유사도 검색 기능을 추가했다.
 
 ---
 
@@ -2585,14 +3704,18 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 
 ### B) 저장소: JSONL vs SQLite
 
-| 기준 | JSONL (선택) | SQLite |
+| 기준 | JSONL (v1-v7) | SQLite + sqlite-vec (v8, 선택) |
 |------|-------------|--------|
-| 의존성 | 없음 | better-sqlite3 등 필요 |
+| 의존성 | 없음 | better-sqlite3, sqlite-vec |
 | 쿼리 | 순차 스캔 | 인덱스 지원 |
-| 동시성 | append 안전 | WAL 모드 필요 |
+| 동시성 | append 안전 | WAL 모드 (읽기/쓰기 동시) |
 | 적합 규모 | ~100K 이벤트 | 100K+ |
+| 벡터 검색 | 불가 | sqlite-vec 코사인 유사도 |
+| 데이터 관리 | 파일 로테이션 필요 | DELETE WHERE로 간단 정리 |
 
-**결론**: JSONL로 시작. 100K+ 이벤트 시 SQLite 마이그레이션 고려.
+**결론 (v8)**: SQLite + sqlite-vec로 전환. 벡터 유사도 검색 요구사항 추가,
+인덱스 기반 쿼리 성능, WAL 동시성, 단일 파일 관리의 이점이
+`better-sqlite3` + `sqlite-vec` 2개 의존성 추가를 정당화한다.
 
 ### C) 커스텀 스킬 저장 위치
 
@@ -2605,12 +3728,46 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 
 ---
 
-## 부록 C: Claude Code Hooks API 참조
+## 부록 C: 외부 프로젝트 차용 패턴 (v9)
+
+> 소스: `references/three-systems-comparison.md` (3개 시스템 비교 연구)
+
+### C.1 차용 패턴 목록
+
+| # | 패턴 | 출처 | 적용 위치 | Phase |
+|---|------|------|----------|-------|
+| 1 | Privacy 태그 스트리핑 | claude-mem (`<private>`) | `lib/db.mjs` → `stripPrivateTags()`, `prompt-logger.mjs` | 1 |
+| 2 | Content-Addressable 분석 캐시 | QMD (SHA-256 해시) | `analysis_cache` 테이블 `input_hash` 컬럼, `ai-analyzer.mjs` | 2 |
+| 3 | FTS5 trigger 동기화 | QMD (FTS5 + triggers) | `events_fts` 가상 테이블, `queryEvents()` `search` 필터 | 1 |
+| 4 | Strong-signal shortcut | QMD (BM25 ≥ 0.85 → 벡터 스킵) | `error-kb.mjs` → `searchErrorKB()` 텍스트 우선 검색 | 5 |
+
+### C.2 검토 후 미채택 패턴
+
+| 패턴 | 출처 | 미채택 사유 |
+|------|------|-----------|
+| Worker 위임 패턴 | claude-mem | 현재 훅이 충분히 가벼움 (~10ms), 불필요한 인프라 추가 |
+| Chroma Vector DB | claude-mem | sqlite-vec가 self-generation 규모에 충분, Python 의존성 회피 |
+| 리랭킹/쿼리 확장 | QMD | 에러 KB/스킬 매칭에는 과잉 설계, GGUF 모델 2GB 추가 부담 |
+| 종속성 도입 (claude-mem) | claude-mem | 데이터 형태 불일치 (observation vs event), AGPL 오염 위험 |
+| 종속성 도입 (QMD) | QMD | 문서 검색 엔진으로 이벤트 데이터 검색에 부적합 |
+
+### C.3 향후 검토 패턴 (Phase 5 이후)
+
+| 패턴 | 출처 | 적용 시점 |
+|------|------|----------|
+| MCP 검색 인터페이스 | claude-mem + QMD | Phase 5 완료 후 — 에러 KB/분석 결과를 MCP로 노출 |
+| Progressive Disclosure | claude-mem | MCP 검색 구현 시 — 인덱스→상세 2단계 응답 |
+| FTS5 + 벡터 하이브리드 RRF 융합 | QMD | 에러 KB 검색 품질 개선이 필요할 때 |
+| Web Viewer UI | claude-mem | 분석 결과/피드백 시각화가 필요할 때 |
+
+---
+
+## 부록 D: Claude Code Hooks API 참조
 
 > 소스: Claude Code 공식 문서 (code.claude.com/docs/en/hooks)
 > 확인일: 2026-02-07
 
-### C.1 전체 훅 이벤트 목록 (12개)
+### D.1 전체 훅 이벤트 목록 (12개)
 
 | 이벤트 | 시점 | matcher 대상 |
 |--------|------|-------------|
@@ -2627,7 +3784,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 | `PreCompact` | 컨텍스트 압축 전 | manual, auto |
 | `SessionEnd` | 세션 종료 | `reason`: clear, logout, prompt_input_exit, other |
 
-### C.2 Hook stdin 공통 필드
+### D.2 Hook stdin 공통 필드
 
 ```json
 {
@@ -2639,7 +3796,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 }
 ```
 
-### C.3 이벤트별 추가 stdin 필드
+### D.3 이벤트별 추가 stdin 필드
 
 | 이벤트 | 추가 필드 |
 |--------|----------|
@@ -2653,7 +3810,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 | `SubagentStart` | `agent_id`, `agent_type` |
 | `SubagentStop` | `agent_id`, `agent_type`, `agent_transcript_path` |
 
-### C.4 Hook stdout 출력 형식
+### D.4 Hook stdout 출력 형식
 
 ```json
 {
@@ -2668,7 +3825,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 }
 ```
 
-### C.5 Hook 등록 형식 (settings.json)
+### D.5 Hook 등록 형식 (settings.json)
 
 ```json
 {
@@ -2698,14 +3855,14 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 
 **실행 순서**: 동일 이벤트의 여러 훅은 **병렬 실행**. 순차 실행은 미지원.
 
-### C.6 환경 변수
+### D.6 환경 변수
 
 | 변수 | 사용 가능 이벤트 | 설명 |
 |------|----------------|------|
 | `CLAUDE_PROJECT_DIR` | 모든 이벤트 | 프로젝트 루트 디렉토리 |
 | `CLAUDE_ENV_FILE` | SessionStart만 | 환경변수 영속화 파일 경로 |
 
-### C.7 종료 코드
+### D.7 종료 코드
 
 | 코드 | 의미 |
 |------|------|

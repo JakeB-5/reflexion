@@ -1,0 +1,46 @@
+version: "1.0"
+domains:
+  infra:
+    description: "인프라: 설치, 설정, 시스템 관리"
+    depends_on: []
+    specs:
+      - install-cli
+      - config-schema
+  data-collection:
+    description: "Phase 1: 데이터 수집 레이어"
+    depends_on:
+      - infra
+    specs:
+      - log-writer
+      - prompt-logger
+      - tool-logger
+      - error-logger
+      - session-summary
+  ai-analysis:
+    description: "Phase 2: AI 기반 패턴 분석 레이어"
+    depends_on:
+      - data-collection
+    specs:
+      - ai-analyzer
+      - analyze-cli
+      - session-start-hook
+  suggestion-engine:
+    description: "Phase 3+4: 제안 적용 엔진 + 피드백 루프"
+    depends_on:
+      - ai-analysis
+    specs:
+      - suggestion-cli
+      - feedback-tracker
+  realtime-assist:
+    description: "Phase 5: 실시간 어시스턴스 레이어"
+    depends_on:
+      - data-collection
+      - ai-analysis
+    specs:
+      - error-kb
+      - skill-matcher
+      - subagent-tracker
+      - subagent-context
+      - pre-tool-guide
+      - embedding-daemon
+      - batch-embeddings
