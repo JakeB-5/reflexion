@@ -51,27 +51,29 @@ CREATE VIRTUAL TABLE vec_skill_embeddings USING vec0(
 
 ## 요구사항
 
-### REQ-RA-101: 스킬 목록 로드 및 DB 동기화 (loadSkills)
+### REQ-RA-101: 스킬 목록 로드 (loadSkills)
 
-시스템은 전역 및 프로젝트 스킬 디렉토리에서 커스텀 스킬 목록을 로드하고, `skill_embeddings` 테이블에 동기화해야 한다(SHALL).
+시스템은 전역 및 프로젝트 스킬 디렉토리에서 커스텀 스킬 목록을 로드해야 한다(SHALL).
 
 스캔 대상:
-1. 전역 스킬: `~/.claude/commands/*.md` (SHALL)
-2. 프로젝트 스킬: `<projectPath>/.claude/commands/*.md` (SHALL)
-3. 각 스킬에 대해 `name` (파일명에서 `.md` 제거), `scope` (`global`|`project`), `content` (파일 내용)를 포함하는 객체 배열을 반환 (SHALL)
-4. 디렉토리가 존재하지 않으면 해당 스코프는 건너뛴다(SHALL)
-5. 각 스킬을 `skill_embeddings` 테이블에 upsert한다(SHALL):
-   ```sql
-   INSERT OR REPLACE INTO skill_embeddings (name, source_path, description, keywords, updated_at)
-   VALUES (?, ?, ?, ?, ?)
-   ```
-6. `description`은 스킬 파일 첫 번째 단락에서 추출하고, `keywords`는 `extractPatterns()`로 추출한 JSON 배열이다(SHOULD)
+1. 전역 스킬: `~/.claude/commands/*.md` (SHALL) — `process.env.HOME`으로 경로 결정
+2. 프로젝트 스킬: `<projectPath>/.claude/commands/*.md` (SHALL) — `projectPath` 인자로 전달
+3. 각 스킬에 대해 다음 필드를 포함하는 객체 배열을 반환 (SHALL):
+   - `name`: 파일명에서 `.md` 제거
+   - `scope`: `'global'` 또는 `'project'`
+   - `content`: 파일 전체 내용
+   - `description`: 첫 번째 비어있지 않고 `#`으로 시작하지 않는 줄 (SHOULD, 없으면 `null`)
+   - `sourcePath`: 스킬 파일의 전체 경로
+4. 디렉토리가 존재하지 않으면 해당 스코프는 건너뛴다(SHALL) — `existsSync()` 체크
+5. `.md` 확장자 파일만 스캔한다(SHALL)
 
-#### Scenario RA-101-1: 전역+프로젝트 스킬 로드 및 DB 동기화
+> **참고**: `loadSkills()`는 DB 동기화를 수행하지 않는다. `skill_embeddings` 테이블 동기화는 `refreshSkillEmbeddings()` (REQ-RA-103)에서 별도로 수행한다.
+
+#### Scenario RA-101-1: 전역+프로젝트 스킬 로드
 
 - **GIVEN** `~/.claude/commands/`에 `deploy.md`가 있고, 프로젝트 `.claude/commands/`에 `test-api.md`가 있을 때
 - **WHEN** `loadSkills(projectPath)`를 호출하면
-- **THEN** `[{ name: "deploy", scope: "global", content: "..." }, { name: "test-api", scope: "project", content: "..." }]`를 반환하고, `skill_embeddings` 테이블에 두 스킬이 upsert된다
+- **THEN** `[{ name: "deploy", scope: "global", content: "...", description: "...", sourcePath: "..." }, { name: "test-api", scope: "project", content: "...", description: "...", sourcePath: "..." }]`를 반환한다
 
 #### Scenario RA-101-2: 스킬 디렉토리 부재 시
 
@@ -79,49 +81,67 @@ CREATE VIRTUAL TABLE vec_skill_embeddings USING vec0(
 - **WHEN** `loadSkills(null)`을 호출하면
 - **THEN** 빈 배열 `[]`을 반환한다
 
+#### Scenario RA-101-3: 프로젝트 경로 없이 전역만 로드
+
+- **GIVEN** `~/.claude/commands/`에 `deploy.md`가 있고, `projectPath`가 `null`
+- **WHEN** `loadSkills(null)`을 호출하면
+- **THEN** 전역 스킬만 포함된 배열을 반환한다
+
 ---
 
 ### REQ-RA-102: 프롬프트-스킬 매칭 (matchSkill)
 
 시스템은 사용자 프롬프트와 스킬 목록을 비교하여 가장 관련 있는 스킬을 반환해야 한다(SHALL).
 
+> **v8 변경**: `loadSynonymMap()` 제거 — 벡터 유사도 검색이 시노님 맵의 의미 매칭을 네이티브하게 대체.
+> **v9 변경**: `claude --print` → Transformers.js, 임계값 0.3 → 0.76.
+
+반환 형태 (SHALL):
+```javascript
+{ name: string, match: 'vector' | 'keyword', confidence: number, scope: 'global' | 'project' }
+```
+
 2단계 매칭 전략 (우선순위 순서):
-1. **벡터 유사도 검색 (primary)**: 프롬프트의 임베딩을 생성하고, `vec_skill_embeddings` 가상 테이블에서 cosine distance가 0.76 미만인 가장 유사한 스킬을 반환한다(SHALL). `skill_embeddings` 테이블과 JOIN한다.
-   ```sql
-   SELECT s.name, s.source_path, s.description, v.distance
-   FROM vec_skill_embeddings v
-   INNER JOIN skill_embeddings s ON s.id = v.skill_id
-   WHERE v.embedding MATCH ? AND k = 1
-   ORDER BY v.distance
-   ```
-   - distance < 0.76이면 `{ skill, confidence: 1.0 - distance }` 반환 (SHALL)
-2. **키워드 패턴 매칭 (fallback)**: 벡터 검색 실패 또는 임베딩 미존재 시, 스킬 파일의 "감지된 패턴" 섹션에서 추출한 패턴 키워드 중 50% 이상이 프롬프트에 포함되면 해당 스킬을 반환한다(SHALL).
-   - confidence: 매칭된 키워드 비율 (e.g., 3/4 = 0.75) (SHALL)
+1. **벡터 유사도 검색 (primary)**: `generateEmbeddings([prompt])`로 프롬프트의 임베딩을 생성하고, `vectorSearch('skill_embeddings', 'vec_skill_embeddings', embedding, 1)`으로 가장 유사한 스킬을 검색한다(SHALL).
+   - distance < 0.76이면 매치로 판정 (SHALL)
+   - 반환: `{ name: results[0].name, match: 'vector', confidence: 1 - results[0].distance, scope: skills.find(s => s.name === results[0].name)?.scope || 'global' }` (SHALL)
+   - 벡터 검색 실패(임베딩 데몬 미실행 등) 시 예외를 흡수하고 키워드 매칭으로 폴스루 (SHALL)
+2. **키워드 패턴 매칭 (fallback)**: `keywordMatch(prompt, skills)` 내부 함수 호출 (SHALL).
+   - 각 스킬의 `extractPatterns(content)`로 추출한 패턴 키워드 중 50% 이상이 프롬프트에 포함되면 해당 스킬을 반환 (SHALL)
+   - 프롬프트와 패턴 모두 소문자(`toLowerCase()`)로 비교 (SHALL)
+   - 3자 이상 단어만 매칭 대상 (SHALL)
+   - 반환: `{ name: skill.name, match: 'keyword', confidence: matchCount / patternWords.length, scope: skill.scope }` (SHALL)
 3. 매칭되는 스킬이 없으면 `null`을 반환 (SHALL)
 
 #### Scenario RA-102-1: 벡터 유사도 매칭 성공
 
-- **GIVEN** `skill_embeddings`에 `deploy` 스킬의 임베딩이 존재하고, 프롬프트 "서버에 배포해줘"와의 cosine distance가 0.15
+- **GIVEN** `vec_skill_embeddings`에 `deploy` 스킬의 임베딩이 존재하고, 프롬프트 "서버에 배포해줘"와의 cosine distance가 0.15
 - **WHEN** `matchSkill("서버에 배포해줘", skills)`를 호출하면
-- **THEN** `{ skill: deploySkill, confidence: 0.85 }`를 반환한다
+- **THEN** `{ name: "deploy", match: "vector", confidence: 0.85, scope: "global" }`를 반환한다
 
 #### Scenario RA-102-2: 한국어 프롬프트로 영어 스킬 매칭 (교차 언어)
 
-- **GIVEN** `skill_embeddings`에 영어로 작성된 `docker-build` 스킬의 임베딩이 존재
+- **GIVEN** `vec_skill_embeddings`에 영어로 작성된 `docker-build` 스킬의 임베딩이 존재
 - **WHEN** `matchSkill("도커 이미지 빌드해줘", skills)`를 호출하면
-- **THEN** 벡터 유사도 검색으로 `docker-build` 스킬을 반환한다
+- **THEN** 벡터 유사도 검색으로 `{ name: "docker-build", match: "vector", ... }`를 반환한다
 
 #### Scenario RA-102-3: 키워드 패턴 매칭 Fallback (50% 임계값)
 
 - **GIVEN** 스킬에 임베딩이 없고, 추출된 패턴 키워드가 `["docker", "build", "image", "push"]`
 - **WHEN** `matchSkill("docker image build", skills)`를 호출하면
-- **THEN** 4개 중 3개(75%) 매칭이므로 해당 스킬을 반환한다
+- **THEN** 4개 중 3개(75%) 매칭이므로 `{ name: "docker-build", match: "keyword", confidence: 0.75, scope: "project" }`를 반환한다
 
 #### Scenario RA-102-4: 임계값 미달로 매칭 실패
 
 - **GIVEN** 스킬 패턴 키워드가 `["deploy", "server", "production", "release"]`
 - **WHEN** `matchSkill("deploy locally", skills)`를 호출하면
 - **THEN** 4개 중 1개(25%)로 임계값(50%) 미달이므로 `null`을 반환한다
+
+#### Scenario RA-102-5: 벡터 검색 실패 → 키워드 폴백
+
+- **GIVEN** 임베딩 데몬이 실행되지 않아 `generateEmbeddings()` 호출이 실패하고, 스킬에 패턴 키워드가 존재
+- **WHEN** `matchSkill(prompt, skills)`를 호출하면
+- **THEN** 벡터 검색 예외를 흡수하고 키워드 매칭으로 폴백하여 결과를 반환한다
 
 ---
 

@@ -10,7 +10,7 @@ constitution_version: "2.0.0"
 
 # tool-logger
 
-> PostToolUse 훅 스크립트 (`hooks/tool-logger.mjs`). 도구 사용을 기록하고, 이전 에러가 해결되었는지 감지하여 에러 KB에 해결 이력을 기록한다.
+> PostToolUse 훅 스크립트 (`hooks/tool-logger.mjs`). 도구 사용을 기록하고, 이전 에러가 해결되었는지 감지하여 에러 KB에 해결 이력을 기록한다. `error-kb.mjs`의 `recordResolution()`을 import하여 사용한다.
 
 ---
 
@@ -22,7 +22,7 @@ constitution_version: "2.0.0"
 
 - **GIVEN** Claude Code가 도구를 성공적으로 실행한 상태
 - **WHEN** PostToolUse 훅이 트리거되면
-- **THEN** `insertEvent()`로 다음 필드를 포함하는 이벤트가 기록(SHALL)된다: `v: 1`, `type: 'tool_use'`, `ts`, `session_id`, `project`, `project_path`, `data: { tool, meta, success: true }`
+- **THEN** `insertEvent()`로 다음 필드를 포함하는 이벤트가 기록(SHALL)된다: `v: 1`, `type: 'tool_use'`, `ts`, `sessionId`, `project`, `projectPath`, `tool`, `meta`, `success: true`
 
 ### Scenario: stdin 필드 매핑
 
@@ -60,29 +60,35 @@ constitution_version: "2.0.0"
 - **WHEN** `extractToolMeta('Grep', { pattern: 'TODO.*fix' })`가 호출되면
 - **THEN** `{ pattern: 'TODO.*fix' }`가 반환(SHALL)된다
 
-### Scenario: Glob 도구 메타 추출
-
-- **GIVEN** Claude가 Glob 도구로 `**/*.ts` 패턴을 검색하고
-- **WHEN** extractToolMeta('Glob', { pattern: '**/*.ts' })가 호출되면
-- **THEN** meta 필드는 `{ pattern: '**/*.ts' }`가 저장되어야 한다
-
 ### Scenario: 알 수 없는 도구
 
 - **GIVEN** 매핑되지 않은 도구가 사용된 상태
 - **WHEN** `extractToolMeta('UnknownTool', ...)`가 호출되면
 - **THEN** 빈 객체 `{}`가 반환(SHALL)된다
 
+### Scenario: toolInput이 null/undefined
+
+- **GIVEN** `toolInput`이 없는 상태
+- **WHEN** `extractToolMeta(tool, null)`가 호출되면
+- **THEN** 빈 객체 `{}`가 반환(SHALL)된다
+
 ---
 
 ## Requirement: REQ-DC-203 — 동일 도구 해결 감지 (Same-tool Resolution)
 
-시스템은 동일 세션 내에서 에러가 발생한 도구가 이후 성공하면 해결로 감지(SHALL)하고 에러 KB에 기록해야 한다.
+시스템은 동일 세션 내에서 에러가 발생한 도구가 이후 성공하면 해결로 감지(SHALL)하고 에러 KB에 기록해야 한다. 성능 제한으로 최근 50개 이벤트만 조회한다.
 
 ### Scenario: Bash 에러 후 동일 Bash 성공
 
-- **GIVEN** `getSessionEvents(sessionId, 100)`으로 현재 세션의 최근 100개 이벤트를 조회한 상태에서, 세션 내에서 Bash 도구가 `tool_error`를 발생시킨 이력이 있는 상태
+- **GIVEN** `queryEvents({ sessionId, limit: 50 })`으로 현재 세션의 최근 50개 이벤트를 시간순 정렬한 상태에서, 세션 내에서 Bash 도구가 `tool_error`를 발생시킨 이력이 있는 상태
 - **WHEN** 이후 동일 세션에서 Bash 도구가 성공적으로 실행되면
-- **THEN** `recordResolution(lastError.error, { tool, sessionId, resolvedBy: 'success_after_error', filePath, toolSequence, promptContext })`를 호출(SHALL)한다
+- **THEN** `recordResolution(lastError.error, { tool, sessionId, resolvedBy: 'success_after_error', errorRaw, filePath, toolSequence, promptContext })`를 호출(SHALL)한다
+
+### Scenario: 풍부한 해결 컨텍스트 (v7 P11)
+
+- **GIVEN** 에러와 성공 사이에 3개의 도구가 사용된 상태
+- **WHEN** 해결이 감지되면
+- **THEN** `toolSequence`에 에러 이후 최대 5개 도구 사용 기록이 포함(SHALL)되고, `promptContext`에 마지막 프롬프트의 처음 200자가 포함(SHALL)된다
 
 ### Scenario: 세션 스코프 제한
 
@@ -94,13 +100,19 @@ constitution_version: "2.0.0"
 
 ## Requirement: REQ-DC-204 — 크로스 도구 해결 감지 (Cross-tool Resolution)
 
-시스템은 한 도구의 에러가 다른 도구의 도움으로 해결되는 패턴을 감지(SHOULD)해야 한다. SQL 조회로 세션 이벤트 시퀀스를 효율적으로 분석한다.
+시스템은 한 도구의 에러가 다른 도구의 도움으로 해결되는 패턴을 감지(SHOULD)해야 한다.
 
 ### Scenario: Bash 실패 → Edit 수정 → Bash 성공 패턴
 
 - **GIVEN** 세션에서 Bash(fail) → Edit(success) → Bash(success) 시퀀스가 발생한 상태
 - **WHEN** 마지막 Bash 성공이 기록되면
-- **THEN** `recordResolution(bashError, { resolvedBy: 'cross_tool_resolution', helpingTool: 'Edit', toolSequence })`를 호출(SHOULD)한다
+- **THEN** `recordResolution(bashError, { tool: bashError.tool, sessionId, resolvedBy: 'cross_tool_resolution', errorRaw, helpingTool: 'Edit', filePath, toolSequence })`를 호출(SHOULD)한다
+
+### Scenario: 이미 해결된 에러 무시
+
+- **GIVEN** 에러 발생 후 원래 도구가 이미 성공한 적이 있는 상태
+- **WHEN** 크로스 도구 해결을 감지하면
+- **THEN** 현재 도구가 `helpingTools` 목록에 포함된 경우에만 기록(SHOULD)한다
 
 ---
 
@@ -110,16 +122,29 @@ constitution_version: "2.0.0"
 
 ### Scenario: 해결 감지 중 오류
 
-- **GIVEN** `getSessionEvents` 또는 `recordResolution` 호출 중 예외가 발생하는 상태
+- **GIVEN** `queryEvents` 또는 `recordResolution` 호출 중 예외가 발생하는 상태
 - **WHEN** 해결 감지 로직에서 오류가 발생하면
-- **THEN** 내부 try-catch로 포착하고 도구 사용 기록은 정상 완료(SHALL)한다
+- **THEN** 내부 try-catch로 포착하고 도구 사용 기록은 정상 완료(SHALL)한다 (해결 감지는 non-critical)
+
+---
+
+## Requirement: REQ-DC-206 — 시스템 활성화 체크
+
+시스템은 훅 실행 초기에 `isEnabled()`를 확인하여 비활성화 시 즉시 종료(SHALL)해야 한다.
+
+### Scenario: 시스템 비활성화
+
+- **GIVEN** `config.json`에서 `enabled: false`로 설정된 상태
+- **WHEN** 훅이 실행되면
+- **THEN** `isEnabled()` 확인 후 즉시 `process.exit(0)`으로 종료(SHALL)한다
 
 ---
 
 ## 비고
 
-- 해결 감지는 `getSessionEvents(sessionId, 100)`를 사용하여 현재 세션의 최근 100개 이벤트를 SQL로 직접 조회 (JSONL 전체 스캔 대비 효율적)
+- 해결 감지는 `queryEvents({ sessionId: input.session_id, limit: 50 })`으로 최근 50개 이벤트를 조회하여 O(n²) 방지
+- 조회된 이벤트는 시간순 정렬 후 분석 (`.sort((a, b) => new Date(a.ts) - new Date(b.ts))`)
 - `promptContext`: 해결 직전 마지막 프롬프트의 처음 200자를 저장하여 해결 맥락 파악에 활용
 - `toolSequence`: 에러와 성공 사이의 최대 5개 도구 사용 기록
-- Phase 5에서 `recordResolution`은 `error-kb.mjs` 모듈에서 import
-- 저장소가 JSONL에서 SQLite `events` 테이블로 변경됨. `db.mjs`의 `insertEvent()`와 `getSessionEvents()`를 사용한다
+- `recordResolution`은 `error-kb.mjs` 모듈에서 import (`import { recordResolution } from '../lib/error-kb.mjs'`)
+- 저장소가 JSONL에서 SQLite `events` 테이블로 변경됨. `db.mjs`의 `insertEvent()`와 `queryEvents()`를 사용한다

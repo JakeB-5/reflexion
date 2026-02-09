@@ -25,14 +25,14 @@ completed: 0
 ### Phase 1: 스캐폴딩
 
 - [ ] [P1] `lib/feedback-tracker.mjs` 모듈 구조 생성 — import문, 상수(`DATA_DIR`, `FEEDBACK_FILE`), export 선언
-- [ ] [P1] `feedback.jsonl` 스키마 정의 — `{ v: 1, ts, suggestionId, action, suggestionType?, summary? }` 문서화
+- [ ] [P1] `feedback` 테이블 스키마 정의 — `{ v: 1, ts, suggestionId, action, suggestionType?, summary? }` 문서화
 
 ### Phase 2: 핵심 구현
 
-- [ ] [P2] `recordFeedback(id, action, details)` 구현 — `appendFileSync`로 JSONL 라인 추가, `v: 1` + `ts` 자동 생성
+- [ ] [P2] `recordFeedback(id, action, details)` 구현 — `recordFeedback()`로 SQLite `feedback` 테이블에 INSERT, `v: 1` + `ts` 자동 생성
 - [ ] [P2] `getFeedbackSummary()` 구현 — 파일 전체 파싱, 채택/거부 집계, 채택률 계산, 최근 10건 슬라이스, 보조 메트릭 포함
-- [ ] [P2] `calcSkillUsageRate()` 구현 — `prompt-log.jsonl`에서 `skill_used` / `skill_created` 비율 계산
-- [ ] [P2] `calcRuleEffectiveness()` 구현 — `prompt-log.jsonl`에서 `tool_error` 전체/최근 7일 집계
+- [ ] [P2] `calcSkillUsageRate()` 구현 — `events` 테이블에서 `skill_used` / `skill_created` 비율 계산
+- [ ] [P2] `calcRuleEffectiveness()` 구현 — `events` 테이블에서 `tool_error` 전체/최근 7일 집계
 - [ ] [P2] `findStaleSkills(days)` 구현 — 스킬 목록 로드, `skill_used` 이벤트 대조, 미사용 스킬 배열 반환
 
 ### Phase 3: 테스트

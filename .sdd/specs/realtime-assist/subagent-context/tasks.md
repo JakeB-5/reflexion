@@ -24,7 +24,7 @@ completed: 0
 
 ### Phase 2: 컨텍스트 주입 로직
 
-- [ ] [P1] 프로젝트별 에러 패턴 조회 — readEntries(logFile, 50) → project 필터 → tool_error 최근 3건 → searchErrorKB 해결 이력 병합
+- [ ] [P1] 프로젝트별 에러 패턴 조회 — queryEvents({limit: 50}) → project 필터 → tool_error 최근 3건 → searchErrorKB 해결 이력 병합
 - [ ] [P1] AI 분석 규칙 조회 — getCachedAnalysis(48) → claude_md 타입 + 프로젝트 필터 → 최대 3건 추출
 - [ ] [P1] 컨텍스트 결합 및 500자 절단 — parts.join('\n').slice(0, 500) → stdout JSON 출력
 - [ ] [P2] [->T] 에러 패턴 주입 테스트 — 에러 있음/없음, KB 해결 이력 있음/없음, 150자 절단
@@ -63,7 +63,7 @@ graph LR
 |-----------|----------------|
 | error-kb | `searchErrorKB()` |
 | ai-analyzer | `getCachedAnalysis()` |
-| log-writer | `readStdin()`, `readEntries()`, `getLogFile()`, `getProjectName()` |
+| db | `readStdin()`, `queryEvents()`, `getDb()`, `getProjectName()` |
 
 ---
 

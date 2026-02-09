@@ -19,12 +19,12 @@ completed: 0
 ### Phase 1: 스캐폴드 및 이벤트 기록
 
 - [ ] [P1] `hooks/subagent-tracker.mjs` 파일 생성 — import, try-catch 구조, readStdin()
-- [ ] [P1] SubagentStopEntry를 prompt-log.jsonl에 append — v, type, ts, sessionId, project, projectPath, agentId, agentType
+- [ ] [P1] SubagentStopEntry를 `events` 테이블에 insertEvent() — v, type, ts, sessionId, project, projectPath, agentId, agentType
 - [ ] [P2] [->T] 이벤트 기록 단위 테스트 — 정상 입력, 필드 누락, 비정상 JSON
 
 ### Phase 2: 성능 통계 집계
 
-- [ ] [P1] SubagentStatsEntry를 subagent-stats.jsonl에 append — v, ts, agentType, success, sessionId, project
+- [ ] [P1] SubagentStatsEntry를 `events` 테이블에 `subagent_stop` 타입으로 insertEvent() — v, ts, agentType, success, sessionId, project
 - [ ] [P1] 성공/실패 판정 로직 구현 — stdin 데이터의 에러 필드 유무 기반
 - [ ] [P2] [->T] 통계 기록 단위 테스트 — 성공/실패 기록, 파일 자동 생성
 

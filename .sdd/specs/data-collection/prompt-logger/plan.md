@@ -40,7 +40,7 @@ status: draft
 
 **산출물:**
 - [ ] `~/.self-generation/hooks/prompt-logger.mjs` 파일 생성
-- [ ] log-writer.mjs import 및 ES Module 설정
+- [ ] db.mjs import 및 ES Module 설정
 
 ### Phase 2: 핵심 로직
 
@@ -84,7 +84,7 @@ status: draft
 ### 통합 테스트
 
 - stdin mock으로 전체 훅 실행 플로우 검증
-- prompt-log.jsonl 파일 기록 결과 확인
+- SQLite `events` 테이블 기록 결과 확인
 
 ---
 

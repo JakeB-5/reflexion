@@ -26,9 +26,9 @@ pre-tool-guide는 도구 실행 전에 과거 학습 데이터를 기반으로 �
 - Strategy 패턴: 3가지 분기에 과도한 추상화
 - Map 기반 핸들러: 가독성은 좋으나 각 핸들러의 입력이 달라 실익 없음
 
-### 결정 2: readEntries() 최대 건수 제한
+### 결정 2: queryEvents() 최대 건수 제한
 
-**근거:** 대용량 로그 파일에서 전체를 읽으면 2s 타임아웃 위험. Edit/Write는 200건, Bash는 100건으로 제한.
+**근거:** 대용량 데이터에서 전체를 읽으면 2s 타임아웃 위험. Edit/Write는 200건, Bash는 100건으로 제한.
 
 ---
 
@@ -50,7 +50,7 @@ Edit/Write, Bash, Task 각각의 가이드 로직 구현
 **산출물:**
 - [ ] Edit/Write 가이드: file_path → prompt-log 에러 검색 → error-kb 조회 → 출력
 - [ ] Bash 가이드: session_id 기반 에러 검색 → error-kb 조회 → toolSequence 표시
-- [ ] Task 가이드: subagent-stats.jsonl → 실패율 계산 → 30% 초과 시 경고
+- [ ] Task 가이드: `events` 테이블 `subagent_stop` 타입 쿼리 → 실패율 계산 → 30% 초과 시 경고
 - [ ] 각 가이드별 단위 테스트
 
 ### Phase 3: 통합 및 출력 테스트
@@ -69,9 +69,9 @@ Edit/Write, Bash, Task 각각의 가이드 로직 구현
 
 | 리스크 | 영향도 | 완화 전략 |
 |--------|--------|----------|
-| PreToolUse 훅이 매 도구 호출마다 실행되어 성능 오버헤드 | 🟡 MEDIUM | 대상 외 도구 즉시 종료, readEntries 건수 제한 |
+| PreToolUse 훅이 매 도구 호출마다 실행되어 성능 오버헤드 | 🟡 MEDIUM | 대상 외 도구 즉시 종료, queryEvents 건수 제한 |
 | error-kb 모듈 의존성으로 모듈 로드 시간 증가 | 🟢 LOW | 경량 모듈, import 비용 미미 |
-| subagent-stats.jsonl이 아직 없는 초기 상태 | 🟢 LOW | existsSync 체크 후 스킵 |
+| `subagent_stop` 이벤트가 아직 없는 초기 상태 | 🟢 LOW | 빈 결과 체크 후 스킵 |
 
 ---
 

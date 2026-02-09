@@ -18,7 +18,7 @@ completed: 0
 
 ### Phase 1: 스캐폴드 및 도구 필터링
 
-- [ ] [P1] `hooks/pre-tool-guide.mjs` 파일 생성 — import (error-kb, log-writer), TRACKER_FILE 상수, try-catch
+- [ ] [P1] `hooks/pre-tool-guide.mjs` 파일 생성 — import (error-kb, db), try-catch
 - [ ] [P1] 대상 도구 분기 구조 — Edit/Write, Bash, Task 분기 + 그 외 즉시 종료
 - [ ] [P2] [->T] 도구 필터링 테스트 — Read, Glob 등 대상 외 도구 스킵 확인
 
@@ -26,7 +26,7 @@ completed: 0
 
 - [ ] [P1] Edit/Write 가이드 구현 — file_path 추출 → prompt-log에서 파일명 기반 에러 검색 (최근 3건) → searchErrorKB → 출력
 - [ ] [P1] Bash 가이드 구현 — session_id 기반 Bash tool_error 검색 → searchErrorKB → toolSequence 표시
-- [ ] [P1] Task 가이드 구현 — subagent-stats.jsonl 읽기 → 에이전트 타입 필터 → 최근 20건 → 실패율 계산 → >30% 경고
+- [ ] [P1] Task 가이드 구현 — `events` 테이블 `subagent_stop` 타입 쿼리 → 에이전트 타입 필터 → 최근 20건 → 실패율 계산 → >30% 경고
 - [ ] [P2] [->T] Edit/Write 가이드 테스트 — 에러 있음/없음, KB 매치 있음/없음
 - [ ] [P2] [->T] Bash 가이드 테스트 — 세션 내 에러 있음/없음, toolSequence 표시
 - [ ] [P2] [->T] Task 가이드 테스트 — 실패율 >30%, <=30%, 데이터 <5건
@@ -64,8 +64,8 @@ graph LR
 | 의존 피처 | 필요 함수/데이터 |
 |-----------|----------------|
 | error-kb | `searchErrorKB()` |
-| log-writer | `readStdin()`, `readEntries()`, `getLogFile()` |
-| subagent-tracker | `subagent-stats.jsonl` 데이터 |
+| db | `readStdin()`, `queryEvents()`, `getDb()` |
+| subagent-tracker | `events` 테이블 `subagent_stop` 타입 데이터 |
 
 ---
 

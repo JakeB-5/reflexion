@@ -40,7 +40,7 @@ status: draft
 
 **산출물:**
 - [ ] `~/.self-generation/hooks/session-summary.mjs` 파일 생성
-- [ ] log-writer.mjs import 설정
+- [ ] db.mjs import 설정
 
 ### Phase 2: 핵심 로직
 
@@ -70,7 +70,7 @@ status: draft
 
 | 리스크 | 영향도 | 완화 전략 |
 |--------|--------|----------|
-| 대용량 JSONL 전체 스캔 성능 | MEDIUM | 향후 세션 인덱스 도입으로 최적화 |
+| 대용량 이벤트 조회 성능 | MEDIUM | SQL 인덱스 활용으로 최적화 |
 | AI 분석 프로세스 spawn 실패 | LOW | try-catch로 요약 기록은 정상 완료 |
 | 빈 세션 (이벤트 0개) | LOW | 0 값으로 정상 기록 |
 
@@ -87,7 +87,7 @@ status: draft
 ### 통합 테스트
 
 - 여러 이벤트 기록 후 세션 요약 생성 플로우
-- prompt-log.jsonl에서 요약 엔트리 확인
+- SQLite `events` 테이블에서 요약 엔트리 확인
 
 ---
 

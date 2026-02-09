@@ -385,6 +385,9 @@ export function getDb() {
   ).get();
   if (!eventsExists || !vecExists) initDb(_db);
 
+  // v8→v9 migration: add input_hash column to analysis_cache if missing
+  migrateV9(_db);
+
   return _db;
 }
 
@@ -407,6 +410,7 @@ export function initDb(db) {
     CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
     CREATE INDEX IF NOT EXISTS idx_events_project_type ON events(project_path, type, ts);
     CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
+    CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, type);
 
     -- Error KB table (replaces error-kb.jsonl) with vector column
     CREATE TABLE IF NOT EXISTS error_kb (
@@ -420,7 +424,7 @@ export function initDb(db) {
       use_count INTEGER DEFAULT 0,
       last_used TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
 
     -- Feedback table (replaces feedback.jsonl)
     CREATE TABLE IF NOT EXISTS feedback (
@@ -434,13 +438,17 @@ export function initDb(db) {
     );
 
     -- Analysis cache table (replaces analysis-cache.json)
+    -- v9: input_hash for content-addressable caching (QMD SHA-256 pattern)
     CREATE TABLE IF NOT EXISTS analysis_cache (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ts TEXT NOT NULL,
       project TEXT,
       days INTEGER,
+      input_hash TEXT,
       analysis JSON NOT NULL
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+      ON analysis_cache(project, days, input_hash);
 
     -- Skill embeddings table (for vector skill matching)
     CREATE TABLE IF NOT EXISTS skill_embeddings (
@@ -451,6 +459,33 @@ export function initDb(db) {
       keywords TEXT,
       updated_at TEXT NOT NULL
     );
+  `);
+
+  // FTS5 virtual table for events text search (v9: QMD FTS5 trigger pattern)
+  // Enables keyword search on prompts and error messages via SQL MATCH
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+      type, text, content='events', content_rowid='id'
+    );
+
+    -- Triggers to keep FTS5 index in sync with events table
+    -- COALESCE extracts $.text (prompt) or $.error (tool_error) depending on event type
+    CREATE TRIGGER IF NOT EXISTS events_fts_insert AFTER INSERT ON events BEGIN
+      INSERT INTO events_fts(rowid, type, text)
+      VALUES (NEW.id, NEW.type,
+        COALESCE(json_extract(NEW.data, '$.text'), json_extract(NEW.data, '$.error')));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
+      INSERT INTO events_fts(events_fts, rowid, type, text)
+      VALUES ('delete', OLD.id, OLD.type,
+        COALESCE(json_extract(OLD.data, '$.text'), json_extract(OLD.data, '$.error')));
+    END;
+
+    -- v9: Enforce INSERT-only constraint at DB level (prevents FTS desync from accidental UPDATEs)
+    CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events BEGIN
+      SELECT RAISE(ABORT, 'events table is INSERT-only. UPDATE is prohibited to maintain FTS5 consistency.');
+    END;
   `);
 
   // vec0 virtual tables — wrapped in individual try-catch
@@ -466,6 +501,50 @@ export function initDb(db) {
       skill_id INTEGER PRIMARY KEY, embedding float[384]
     )`);
   } catch { /* Table already exists or vec0 unavailable */ }
+}
+
+/**
+ * v8→v9 schema migration
+ * Adds input_hash column to analysis_cache and events_fts if missing.
+ * Safe to call multiple times (idempotent via column existence check).
+ */
+function migrateV9(db) {
+  // Check if input_hash column exists in analysis_cache
+  const columns = db.prepare("PRAGMA table_info('analysis_cache')").all();
+  const hasInputHash = columns.some(c => c.name === 'input_hash');
+  if (!hasInputHash && columns.length > 0) {
+    db.exec('ALTER TABLE analysis_cache ADD COLUMN input_hash TEXT');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+      ON analysis_cache(project, days, input_hash)`);
+  }
+
+  // Ensure events_fts exists (may be missing on v8 databases)
+  const ftsExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='events_fts'"
+  ).get();
+  if (!ftsExists) {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+        type, text, content='events', content_rowid='id'
+      );
+      CREATE TRIGGER IF NOT EXISTS events_fts_insert AFTER INSERT ON events BEGIN
+        INSERT INTO events_fts(rowid, type, text)
+        VALUES (NEW.id, NEW.type,
+          COALESCE(json_extract(NEW.data, '$.text'), json_extract(NEW.data, '$.error')));
+      END;
+      CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
+        INSERT INTO events_fts(events_fts, rowid, type, text)
+        VALUES ('delete', OLD.id, OLD.type,
+          COALESCE(json_extract(OLD.data, '$.text'), json_extract(OLD.data, '$.error')));
+      END;
+    `);
+    // Backfill existing events into FTS index
+    db.exec(`
+      INSERT INTO events_fts(rowid, type, text)
+      SELECT id, type, COALESCE(json_extract(data, '$.text'), json_extract(data, '$.error'))
+      FROM events WHERE type IN ('prompt', 'tool_error');
+    `);
+  }
 }
 
 export function getProjectName(cwd) {
@@ -527,6 +606,12 @@ export function queryEvents(filters = {}) {
     params.push(filters.since);
   }
 
+  // FTS5 full-text search (v9: keyword search on prompt/error text)
+  if (filters.search) {
+    conditions.push('id IN (SELECT rowid FROM events_fts WHERE events_fts MATCH ?)');
+    params.push(filters.search);
+  }
+
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const limit = filters.limit ? `LIMIT ${Number(filters.limit)}` : '';
 
@@ -575,45 +660,35 @@ export async function generateEmbeddings(texts) {
  * Step 2: 원본 테이블에서 ID로 상세 데이터 조회
  * Note: vec0 MATCH와 직접 JOIN은 sqlite-vec 버전에 따라 미지원될 수 있어 2단계로 분리
  */
+// v9: Table registry for extensible vector search (avoids hardcoded branching)
+const VEC_TABLE_REGISTRY = {
+  error_kb:         { vecTable: 'vec_error_kb',          fkColumn: 'error_kb_id' },
+  skill_embeddings: { vecTable: 'vec_skill_embeddings',  fkColumn: 'skill_id' }
+};
+
 export function vectorSearch(table, vecTable, queryEmbedding, limit = 5) {
   const db = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(queryEmbedding).buffer);
+  const registry = VEC_TABLE_REGISTRY[table];
+  if (!registry) return [];
 
-  if (table === 'error_kb') {
-    // Step 1: KNN search on vec0
-    const vecResults = db.prepare(`
-      SELECT error_kb_id, distance FROM vec_error_kb
-      WHERE embedding MATCH ? AND k = ?
-      ORDER BY distance
-    `).all(embeddingBlob, limit);
-    if (vecResults.length === 0) return [];
+  // Step 1: KNN search on vec0
+  const vecResults = db.prepare(`
+    SELECT ${registry.fkColumn}, distance FROM ${registry.vecTable}
+    WHERE embedding MATCH ? AND k = ?
+    ORDER BY distance
+  `).all(embeddingBlob, limit);
+  if (vecResults.length === 0) return [];
 
-    // Step 2: Fetch full records by IDs
-    const ids = vecResults.map(r => r.error_kb_id);
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT * FROM error_kb WHERE id IN (${placeholders})`).all(...ids);
+  // Step 2: Fetch full records by IDs
+  const ids = vecResults.map(r => r[registry.fkColumn]);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`).all(...ids);
 
-    // Merge distance and preserve order
-    const distMap = Object.fromEntries(vecResults.map(r => [r.error_kb_id, r.distance]));
-    return rows.map(r => ({ ...r, distance: distMap[r.id] }))
-      .sort((a, b) => a.distance - b.distance);
-  } else if (table === 'skill_embeddings') {
-    const vecResults = db.prepare(`
-      SELECT skill_id, distance FROM vec_skill_embeddings
-      WHERE embedding MATCH ? AND k = ?
-      ORDER BY distance
-    `).all(embeddingBlob, limit);
-    if (vecResults.length === 0) return [];
-
-    const ids = vecResults.map(r => r.skill_id);
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT * FROM skill_embeddings WHERE id IN (${placeholders})`).all(...ids);
-
-    const distMap = Object.fromEntries(vecResults.map(r => [r.skill_id, r.distance]));
-    return rows.map(r => ({ ...r, distance: distMap[r.id] }))
-      .sort((a, b) => a.distance - b.distance);
-  }
-  return [];
+  // Merge distance and preserve order
+  const distMap = Object.fromEntries(vecResults.map(r => [r[registry.fkColumn], r.distance]));
+  return rows.map(r => ({ ...r, distance: distMap[r.id] }))
+    .sort((a, b) => a.distance - b.distance);
 }
 
 /**
@@ -633,6 +708,19 @@ export function readStdin() {
     });
     process.stdin.on('error', (e) => { clearTimeout(timeout); reject(e); });
   });
+}
+
+/**
+ * Privacy 태그 스트리핑 (차용: claude-mem <private> 태그 패턴)
+ * 사용자가 <private>...</private>로 감싼 내용은 DB에 저장하지 않음
+ * Hook 레이어(edge)에서 처리하여 민감 정보가 DB에 도달하지 않도록 보장
+ * NOTE: 닫히지 않은 <private> 태그(예: "<private>비밀번호")는 의도적으로 무시한다.
+ *       정규식은 반드시 </private> 종료 태그가 있어야 매칭하며,
+ *       이는 사용자가 명시적으로 범위를 지정한 경우에만 스트리핑하기 위함이다.
+ */
+export function stripPrivateTags(text) {
+  if (!text) return text;
+  return text.replace(/<private>[\s\S]*?<\/private>/gi, '[PRIVATE]').trim();
 }
 
 export function loadConfig() {
@@ -677,10 +765,15 @@ export function pruneOldEvents(retentionDays) {
 
 ```javascript
 // ~/.self-generation/hooks/prompt-logger.mjs
-import { insertEvent, getProjectName, getProjectPath, readStdin } from '../lib/db.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, stripPrivateTags, isEnabled } from '../lib/db.mjs';
 
 try {
   const input = await readStdin();
+  if (!isEnabled()) process.exit(0);
+
+  // Privacy tag stripping (v9: claude-mem <private> pattern)
+  // Strip <private>...</private> content before storage
+  const cleanPrompt = stripPrivateTags(input.prompt);
 
   const entry = {
     v: 1,
@@ -689,8 +782,8 @@ try {
     sessionId: input.session_id,
     project: getProjectName(getProjectPath(input.cwd)),
     projectPath: getProjectPath(input.cwd),
-    text: input.prompt,
-    charCount: input.prompt.length
+    text: cleanPrompt,
+    charCount: cleanPrompt.length
   };
 
   insertEvent(entry);
@@ -808,6 +901,7 @@ try {
 }
 
 function extractToolMeta(tool, toolInput) {
+  if (!toolInput) return {};
   switch (tool) {
     case 'Bash':
       // 실행 커맨드의 첫 단어만 (보안: 전체 인자 저장하지 않음)
@@ -1038,6 +1132,7 @@ JSON만 출력하라. 다른 텍스트는 포함하지 마라.
 ```javascript
 // ~/.self-generation/lib/ai-analyzer.mjs
 import { execSync, spawn } from 'child_process';
+import { createHash } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getDb, queryEvents } from './db.mjs';
@@ -1046,6 +1141,17 @@ import { loadSkills } from './skill-matcher.mjs';
 
 const GLOBAL_DIR = join(process.env.HOME, '.self-generation');
 const PROMPT_TEMPLATE = join(GLOBAL_DIR, 'prompts', 'analyze.md');
+
+/**
+ * Content-addressable hash of input events (v9: QMD SHA-256 pattern)
+ * Same input events produce the same hash → skip redundant AI analysis
+ */
+function computeInputHash(events) {
+  const content = events.map(e =>
+    `${e.type}:${e.ts}:${e.session_id}:${JSON.stringify(e.data)}`
+  ).join('\n');
+  return createHash('sha256').update(content).digest('hex');
+}
 
 /**
  * AI 분석 실행 (동기)
@@ -1067,6 +1173,17 @@ export function runAnalysis(options = {}) {
     return { suggestions: [], reason: 'insufficient_data' };
   }
 
+  // Content-addressable cache hit check (v9: skip AI call if input unchanged)
+  const projectKey = project || 'all';
+  const inputHash = computeInputHash(entries);
+  const db = getDb();
+  const cached = db.prepare(
+    'SELECT analysis FROM analysis_cache WHERE project = ? AND days = ? AND input_hash = ?'
+  ).get(projectKey, days, inputHash);
+  if (cached) {
+    return JSON.parse(cached.analysis); // Cache hit — skip claude --print
+  }
+
   // 로그 데이터를 요약하여 프롬프트에 주입 (토큰 절약)
   const logSummary = summarizeForPrompt(entries);
   const prompt = buildPrompt(logSummary, days, project, projectPath);
@@ -1085,12 +1202,14 @@ export function runAnalysis(options = {}) {
 
     const analysis = JSON.parse(extractJSON(result));
 
-    // 캐시를 DB에 저장 (analysis_cache 테이블)
-    const db = getDb();
+    // 캐시를 DB에 저장 (analysis_cache 테이블, v9: with input_hash)
+    // ON CONFLICT UPDATE preserves the row id (INSERT OR REPLACE would delete+reinsert)
     db.prepare(`
-      INSERT INTO analysis_cache (ts, project, days, analysis)
-      VALUES (?, ?, ?, ?)
-    `).run(new Date().toISOString(), project || 'all', days, JSON.stringify(analysis));
+      INSERT INTO analysis_cache (ts, project, days, input_hash, analysis)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(project, days, input_hash)
+      DO UPDATE SET ts = excluded.ts, analysis = excluded.analysis
+    `).run(new Date().toISOString(), projectKey, days, inputHash, JSON.stringify(analysis));
 
     return analysis;
   } catch (e) {
@@ -1121,17 +1240,19 @@ export function runAnalysisAsync(options = {}) {
 /**
  * 캐시된 분석 결과 조회 (DB 기반)
  * SessionStart 훅에서 호출
+ * v9: project 필터 추가 — 크로스 프로젝트 캐시 오염 방지
  */
-export function getCachedAnalysis(maxAgeHours = 24) {
+export function getCachedAnalysis(maxAgeHours = 24, project = null) {
   try {
     const db = getDb();
     const cutoff = new Date(Date.now() - maxAgeHours * 3600000).toISOString();
 
+    const projectKey = project || 'all';
     const row = db.prepare(`
       SELECT analysis FROM analysis_cache
-      WHERE ts >= ?
+      WHERE ts >= ? AND project = ?
       ORDER BY ts DESC LIMIT 1
-    `).get(cutoff);
+    `).get(cutoff, projectKey);
 
     if (!row) return null;
     return JSON.parse(row.analysis);
@@ -1224,7 +1345,7 @@ function extractJSON(text) {
 
 ```javascript
 // ~/.self-generation/hooks/session-summary.mjs
-import { insertEvent, queryEvents, getProjectName, getProjectPath, getDb, readStdin, generateEmbeddings, isEnabled } from '../lib/db.mjs';
+import { insertEvent, queryEvents, getProjectName, getProjectPath, getDb, readStdin, generateEmbeddings, isEnabled, pruneOldEvents } from '../lib/db.mjs';
 import { runAnalysisAsync } from '../lib/ai-analyzer.mjs';
 import { join } from 'path';
 
@@ -1280,6 +1401,11 @@ try {
     runAnalysisAsync({ days: 7, project: getProjectName(getProjectPath(input.cwd)), projectPath: getProjectPath(input.cwd) });
   }
 
+  // v9: Probabilistic DB pruning (10% chance per session, avoids overhead)
+  if (Math.random() < 0.1) {
+    try { pruneOldEvents(); } catch { /* Non-critical */ }
+  }
+
   // v8: 배치 임베딩 처리를 detached 프로세스로 분리 (SessionEnd 블로킹 방지)
   // 에러 KB + 스킬 임베딩 갱신을 비동기 백그라운드에서 수행
   try {
@@ -1311,7 +1437,10 @@ import { isServerRunning, startServer } from './embedding-client.mjs';
 const projectPath = process.argv[2] || process.cwd();
 
 try {
-  // Delay 10s to avoid DB write contention with session-summary and analyze processes
+  // Delay 10s to reduce DB write contention with session-summary and analyze processes.
+  // This does NOT guarantee contention-free access — concurrent writes are ultimately
+  // handled by SQLite WAL mode + busy_timeout(10s) below. The delay merely reduces
+  // the frequency of busy retries in the common case.
   await new Promise(r => setTimeout(r, 10000));
 
   // Ensure embedding daemon is running
@@ -1373,14 +1502,15 @@ try {
 
 ```javascript
 // ~/.self-generation/hooks/session-analyzer.mjs
-import { readStdin } from '../lib/db.mjs';
+import { readStdin, getProjectName, getProjectPath } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
 try {
   const input = await readStdin();
+  const project = getProjectName(getProjectPath(input.cwd));
 
-  // 캐시된 AI 분석 결과 조회 (24시간 이내, DB 기반)
-  const analysis = getCachedAnalysis(24);
+  // 캐시된 AI 분석 결과 조회 (24시간 이내, v9: 프로젝트별 필터)
+  const analysis = getCachedAnalysis(24, project);
 
   if (analysis && analysis.suggestions && analysis.suggestions.length > 0) {
     const msg = formatSuggestionsForContext(analysis.suggestions);
@@ -1542,16 +1672,20 @@ console.log('제안을 적용하려면: node ~/.self-generation/bin/apply.mjs <�
 
 ```javascript
 // ~/.self-generation/bin/apply.mjs
-// 사용법: node ~/.self-generation/bin/apply.mjs <suggestion-number> [--global]
+// 사용법: node ~/.self-generation/bin/apply.mjs <suggestion-number> [--global] [--project <name>]
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 import { recordFeedback } from '../lib/feedback-tracker.mjs';
+import { insertEvent, getProjectName } from '../lib/db.mjs';
 
 const args = process.argv.slice(2);
 const num = parseInt(args[0]);
 const isGlobal = args.includes('--global');
+// v9: project filter — use --project flag or infer from cwd
+const projectIdx = args.indexOf('--project');
+const project = projectIdx !== -1 ? args[projectIdx + 1] : basename(process.cwd());
 
 if (isNaN(num)) {
   console.error('사용법: node ~/.self-generation/bin/apply.mjs <번호> [--global]');
@@ -1559,7 +1693,7 @@ if (isNaN(num)) {
 }
 
 // AI 분석 캐시에서 제안 목록 조회
-const analysis = getCachedAnalysis(168); // 7일 이내 캐시
+const analysis = getCachedAnalysis(168, project); // v9: project-scoped cache lookup
 if (!analysis || !analysis.suggestions?.length) {
   console.error('분석 결과가 없습니다. 먼저 node ~/.self-generation/bin/analyze.mjs 를 실행하세요.');
   process.exit(1);
@@ -1627,6 +1761,15 @@ switch (suggestion.type) {
 recordFeedback(suggestion.id, 'accepted', {
   suggestionType: suggestion.type,
   summary: suggestion.summary
+});
+
+// v9: Track suggestion application for calcSkillUsageRate()
+insertEvent({
+  v: 1,
+  type: suggestion.type === 'skill' ? 'skill_created' : 'suggestion_applied',
+  ts: new Date().toISOString(),
+  project: getProjectName(process.cwd()),
+  data: { suggestionId: suggestion.id, suggestionType: suggestion.type, scope: isGlobal ? 'global' : 'project' }
 });
 
 function applySkill(suggestion) {
@@ -1716,6 +1859,131 @@ recordFeedback(suggestionId, 'rejected', {
 
 console.log(`제안 거부 기록됨: ${suggestionId}`);
 console.log('이 패턴은 향후 AI 분석 시 제외 컨텍스트로 전달됩니다.');
+```
+
+### 6.1.2 설치 스크립트
+
+```javascript
+// ~/.self-generation/bin/install.mjs
+// 사용법: node install.mjs [--uninstall]
+// v9: 자동화된 설치/제거 스크립트
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { homedir } from 'os';
+
+const HOME = homedir();
+const SELF_GEN_DIR = join(HOME, '.self-generation');
+const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
+const isUninstall = process.argv.includes('--uninstall');
+
+const HOOK_EVENTS = {
+  UserPromptSubmit: { script: 'prompt-logger.mjs', timeout: 5 },
+  PostToolUse: { script: 'tool-logger.mjs', timeout: 5 },
+  PostToolUseFailure: { script: 'error-logger.mjs', timeout: 5 },
+  PreToolUse: { script: 'pre-tool-guide.mjs', matcher: 'Edit|Write|Bash|Task', timeout: 5 },
+  SubagentStart: { script: 'subagent-context.mjs', timeout: 5 },
+  SubagentStop: { script: 'subagent-tracker.mjs', timeout: 5 },
+  SessionEnd: { script: 'session-summary.mjs', timeout: 10 },
+  SessionStart: { script: 'session-analyzer.mjs', timeout: 10 }
+};
+
+if (isUninstall) {
+  // Remove hooks from settings.json (preserve other hooks)
+  if (existsSync(SETTINGS_PATH)) {
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+    if (settings.hooks) {
+      for (const event of Object.keys(HOOK_EVENTS)) {
+        if (settings.hooks[event]) {
+          settings.hooks[event] = settings.hooks[event].filter(
+            group => !group.hooks?.some(h => h.command?.includes('.self-generation'))
+          );
+          if (settings.hooks[event].length === 0) delete settings.hooks[event];
+        }
+      }
+      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    }
+  }
+  console.log('✅ self-generation 훅이 settings.json에서 제거되었습니다.');
+  console.log(`   데이터 삭제: rm -rf ${SELF_GEN_DIR}`);
+  process.exit(0);
+}
+
+// 1. Create directory structure
+for (const dir of ['data', 'hooks', 'lib', 'bin', 'prompts']) {
+  mkdirSync(join(SELF_GEN_DIR, dir), { recursive: true });
+}
+console.log('📁 디렉토리 구조 생성 완료');
+
+// 2. Initialize package.json and install dependencies
+if (!existsSync(join(SELF_GEN_DIR, 'package.json'))) {
+  writeFileSync(join(SELF_GEN_DIR, 'package.json'), JSON.stringify({
+    name: 'self-generation',
+    version: '0.1.0',
+    type: 'module',
+    private: true,
+    dependencies: {
+      'better-sqlite3': '^11.0.0',
+      'sqlite-vec': '^0.1.0',
+      '@xenova/transformers': '^2.17.0'
+    }
+  }, null, 2));
+}
+console.log('📦 package.json 생성 완료');
+
+try {
+  execSync('npm install --production', { cwd: SELF_GEN_DIR, stdio: 'inherit' });
+  console.log('📦 의존성 설치 완료');
+} catch (e) {
+  console.error('❌ 의존성 설치 실패:', e.message);
+  process.exit(1);
+}
+
+// 3. Initialize config.json
+const configPath = join(SELF_GEN_DIR, 'config.json');
+if (!existsSync(configPath)) {
+  writeFileSync(configPath, JSON.stringify({
+    enabled: true,
+    collectPromptText: true,
+    retentionDays: 90,
+    analysisModel: 'claude-sonnet-4-5-20250929'
+  }, null, 2));
+  console.log('⚙️ config.json 초기화 완료');
+}
+
+// 4. Merge hooks into settings.json (preserve existing hooks)
+mkdirSync(join(HOME, '.claude'), { recursive: true });
+const settings = existsSync(SETTINGS_PATH)
+  ? JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'))
+  : {};
+if (!settings.hooks) settings.hooks = {};
+
+for (const [event, config] of Object.entries(HOOK_EVENTS)) {
+  const script = config.script;
+  const matcher = config.matcher;
+  const timeout = config.timeout;
+  const hookEntry = {
+    type: 'command',
+    command: `node ${join(SELF_GEN_DIR, 'hooks', script)}`,
+    timeout
+  };
+  const group = { hooks: [hookEntry] };
+  if (matcher) group.matcher = matcher;
+
+  // Avoid duplicate registration
+  if (!settings.hooks[event]) settings.hooks[event] = [];
+  const alreadyRegistered = settings.hooks[event].some(
+    g => g.hooks?.some(h => h.command?.includes('.self-generation'))
+  );
+  if (!alreadyRegistered) settings.hooks[event].push(group);
+}
+
+writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+console.log('🔗 settings.json에 훅 등록 완료');
+
+console.log('\n✅ self-generation 설치 완료!');
+console.log('   다음 Claude Code 세션부터 데이터 수집이 시작됩니다.');
 ```
 
 ### 6.2 사용자 승인 플로우
@@ -1965,33 +2233,19 @@ export function normalizeError(error) {
 }
 
 /**
- * 에러 해결 이력 검색 (벡터 유사도 + 텍스트 폴백)
- * 정규화된 에러 메시지로 과거 해결 사례를 조회
+ * 에러 해결 이력 검색 (Strong-signal shortcut + 벡터 폴백)
+ * v9 설계 변경: QMD의 Strong-signal shortcut 패턴을 차용.
+ * 텍스트 매칭을 먼저 시도하고, 정확한 매칭이 없을 때만 벡터 검색으로 폴백.
+ * 이유: 정확 매칭은 ~1ms, 벡터 검색은 ~5ms — 정확 매칭 성공 시 80% 시간 절약.
  */
 export async function searchErrorKB(normalizedError) {
   const db = getDb();
 
-  // 1. 벡터 유사도 검색 (임베딩이 존재하는 경우)
-  try {
-    // Generate embedding from normalized error text first
-    const embeddings = await generateEmbeddings([normalizedError]);
-    if (embeddings && embeddings[0]) {
-      const vectorResults = vectorSearch('error_kb', 'vec_error_kb', embeddings[0], 3)
-        .filter(r => r.resolution != null);
-      if (vectorResults.length > 0 && vectorResults[0].distance < 0.76) {
-        // 사용 카운트 증가
-        db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
-          .run(new Date().toISOString(), vectorResults[0].id);
-        return vectorResults[0];
-      }
-    }
-  } catch { /* Vector search not available, fall through to text matching */ }
-
-  // 2. 폴백: 정확한 텍스트 매칭
+  // 1. Strong-signal: 정확한 텍스트 매칭 (fastest path, ~1ms)
   const exact = db.prepare(`
     SELECT * FROM error_kb
     WHERE error_normalized = ? AND resolution IS NOT NULL
-    ORDER BY ts DESC LIMIT 1
+    ORDER BY use_count DESC, ts DESC LIMIT 1
   `).get(normalizedError);
   if (exact) {
     db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
@@ -1999,18 +2253,39 @@ export async function searchErrorKB(normalizedError) {
     return exact;
   }
 
-  // 3. 폴백: 접두사 매칭 (첫 30자)
+  // 2. Strong-signal: 접두사 매칭 (첫 30자, ~2ms)
+  // Length ratio check prevents false positives when different errors share a prefix
+  // e.g. "TypeError: Cannot read properties of undefined (reading 'map')" vs '...length')"
   const prefix = normalizedError.slice(0, 30);
   const prefixMatch = db.prepare(`
     SELECT * FROM error_kb
     WHERE error_normalized LIKE ? AND resolution IS NOT NULL
-    ORDER BY ts DESC LIMIT 1
+    ORDER BY use_count DESC, ts DESC LIMIT 1
   `).get(prefix + '%');
   if (prefixMatch) {
-    db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
-      .run(new Date().toISOString(), prefixMatch.id);
-    return prefixMatch;
+    const lenRatio = Math.min(normalizedError.length, prefixMatch.error_normalized.length)
+      / Math.max(normalizedError.length, prefixMatch.error_normalized.length);
+    if (lenRatio >= 0.7) { // Length similarity threshold: 70%
+      db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
+        .run(new Date().toISOString(), prefixMatch.id);
+      return prefixMatch;
+    }
+    // Length ratio too different — fall through to vector search
   }
+
+  // 3. 벡터 유사도 검색 (텍스트 매칭 실패 시에만 실행, ~5ms via daemon)
+  try {
+    const embeddings = await generateEmbeddings([normalizedError]);
+    if (embeddings && embeddings[0]) {
+      const vectorResults = vectorSearch('error_kb', 'vec_error_kb', embeddings[0], 3)
+        .filter(r => r.resolution != null);
+      if (vectorResults.length > 0 && vectorResults[0].distance < 0.76) {
+        db.prepare('UPDATE error_kb SET use_count = use_count + 1, last_used = ? WHERE id = ?')
+          .run(new Date().toISOString(), vectorResults[0].id);
+        return vectorResults[0];
+      }
+    }
+  } catch { /* Vector search not available */ }
 
   return null;
 }
@@ -2023,9 +2298,17 @@ export async function searchErrorKB(normalizedError) {
  */
 export function recordResolution(normalizedError, resolution) {
   const db = getDb();
+  // v9: UPSERT to prevent duplicate error_kb entries for same normalized error.
+  // On conflict, update resolution and increment use_count.
   db.prepare(`
-    INSERT INTO error_kb (ts, error_normalized, error_raw, resolution, resolved_by, tool_sequence)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO error_kb (ts, error_normalized, error_raw, resolution, resolved_by, tool_sequence, use_count)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(error_normalized) DO UPDATE SET
+      ts = excluded.ts,
+      resolution = excluded.resolution,
+      resolved_by = excluded.resolved_by,
+      tool_sequence = excluded.tool_sequence,
+      use_count = use_count + 1
   `).run(
     new Date().toISOString(),
     normalizedError,
@@ -2415,7 +2698,7 @@ export function extractPatterns(content) {
 
 ```javascript
 // ~/.self-generation/hooks/prompt-logger.mjs (v6 확장)
-import { insertEvent, getProjectName, getProjectPath, readStdin, loadConfig } from '../lib/db.mjs';
+import { insertEvent, getProjectName, getProjectPath, readStdin, loadConfig, stripPrivateTags } from '../lib/db.mjs';
 import { loadSkills, matchSkill } from '../lib/skill-matcher.mjs';
 
 try {
@@ -2423,7 +2706,9 @@ try {
   const config = loadConfig();
   if (config.enabled === false) process.exit(0);
 
-  const promptText = config.collectPromptText === false ? '[REDACTED]' : input.prompt;
+  // Privacy tag stripping (v9) + collectPromptText check
+  const rawPrompt = config.collectPromptText === false ? '[REDACTED]' : input.prompt;
+  const promptText = stripPrivateTags(rawPrompt);
 
   // 1. 프롬프트 기록 (events 테이블에 INSERT)
   const entry = {
@@ -2441,9 +2726,13 @@ try {
   // 2. 스킬 자동 감지 (v6 추가)
   // Note: matchSkill()은 벡터 매칭 시 임베딩 데몬 통신(~5ms warm, ~10s cold)이 필요하므로
   // insertEvent() 완료 후 best-effort로 시도. 데몬 미실행 시 키워드 폴백이 즉시 동작.
+  // v9: 2s timeout to prevent blocking on daemon cold start (consistent with error-logger)
   const skills = loadSkills(input.cwd);
   if (skills.length > 0) {
-    const matched = await matchSkill(input.prompt, skills);
+    const matched = await Promise.race([
+      matchSkill(input.prompt, skills),
+      new Promise(resolve => setTimeout(() => resolve(null), 2000))
+    ]);
     if (matched) {
       const output = {
         hookSpecificOutput: {
@@ -2499,11 +2788,10 @@ try {
     project: getProjectName(getProjectPath(input.cwd)),
     projectPath: getProjectPath(input.cwd),
     agentId: input.agent_id,
-    agentType: input.agent_type,
-    // Note: SubagentStop 공식 stdin 필드는 agent_id, agent_type, agent_transcript_path만 명시.
-    // error 필드는 공식 문서에 없어 항상 undefined일 가능성이 높음 → success 항상 true.
-    // 정확한 실패 판정이 필요하면 agent_transcript_path를 읽어 파싱하는 방안을 고려.
-    success: input.error != null ? false : true
+    agentType: input.agent_type
+    // v9: success 필드 제거. SubagentStop 공식 stdin에 error 필드가 없어 항상 true였으므로
+    // dead code 방지를 위해 삭제. 9장 스키마 { agentId, agentType }과 일치.
+    // 향후 API에 실패 정보가 추가되면 agent_transcript_path 파싱으로 정확한 판정 구현.
   };
 
   insertEvent(entry);
@@ -2535,8 +2823,8 @@ try {
 
   const contextParts = [];
 
-  // 1. 캐시된 AI 분석 결과 주입 (기존)
-  const analysis = getCachedAnalysis(24);
+  // 1. 캐시된 AI 분석 결과 주입 (v9: project 필터 추가)
+  const analysis = getCachedAnalysis(24, project);
   if (analysis && analysis.suggestions?.length > 0) {
     let msg = '[Self-Generation] AI 패턴 분석 결과:\n';
     for (const s of analysis.suggestions.slice(0, 3)) {
@@ -2670,23 +2958,11 @@ try {
   }
 
   // 3. Task 도구: 서브에이전트 실패율 경고
-  if (input.tool_name === 'Task' && input.tool_input?.subagent_type) {
-    const agentType = input.tool_input.subagent_type;
-    const db = getDb();
-    const stats = db.prepare(`
-      SELECT COUNT(*) AS total,
-        SUM(CASE WHEN json_extract(data, '$.success') = 0 THEN 1 ELSE 0 END) AS failures
-      FROM (
-        SELECT data FROM events
-        WHERE type = 'subagent_stop' AND json_extract(data, '$.agentType') = ?
-        ORDER BY ts DESC LIMIT 20
-      )
-    `).get(agentType);
-    if (stats && stats.total >= 5 && stats.failures / stats.total > 0.3) {
-      parts.push(`📊 ${agentType} 최근 실패율: ${Math.round(stats.failures / stats.total * 100)}% (${stats.total}회 중 ${stats.failures}회)`);
-      parts.push(`   더 높은 티어의 에이전트 사용을 고려하세요.`);
-    }
-  }
+  // v9: Disabled — SubagentStop API does not provide error/success information.
+  // The success field was removed from subagent_stop events (see subagent-tracker.mjs).
+  // To re-enable, implement agent_transcript_path parsing for failure detection,
+  // then query the resulting field here.
+  // if (input.tool_name === 'Task' && input.tool_input?.subagent_type) { ... }
 
   if (parts.length > 0) {
     process.stdout.write(JSON.stringify({
@@ -2705,8 +2981,7 @@ try {
 
 ```javascript
 // ~/.self-generation/hooks/subagent-context.mjs
-import { searchErrorKB } from '../lib/error-kb.mjs';
-import { queryEvents, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
+import { queryEvents, getDb, getProjectName, getProjectPath, readStdin, isEnabled } from '../lib/db.mjs';
 import { getCachedAnalysis } from '../lib/ai-analyzer.mjs';
 
 const CODE_AGENTS = ['executor', 'executor-low', 'executor-high', 'architect', 'architect-medium',
@@ -2731,17 +3006,24 @@ try {
 
   if (projectErrors.length > 0) {
     parts.push('이 프로젝트의 최근 에러 패턴:');
+    // v9: text-only search to avoid SubagentStart delay from vector search loop
+    // searchErrorKB() with vector fallback could take ~5ms×3 = 15ms + embedding overhead
+    const db = getDb();
     for (const err of projectErrors) {
       parts.push(`- ${err.error} (${err.tool})`);
-      const kb = await searchErrorKB(err.error);
+      const kb = db.prepare(`
+        SELECT resolution FROM error_kb
+        WHERE error_normalized = ? AND resolution IS NOT NULL
+        ORDER BY use_count DESC LIMIT 1
+      `).get(err.error);
       if (kb?.resolution) {
         parts.push(`  해결: ${JSON.stringify(kb.resolution).slice(0, 150)}`);
       }
     }
   }
 
-  // 2. 캐시된 AI 분석의 관련 규칙 주입
-  const analysis = getCachedAnalysis(48); // 48시간 이내 캐시
+  // 2. 캐시된 AI 분석의 관련 규칙 주입 (v9: project 필터)
+  const analysis = getCachedAnalysis(48, project); // 48시간 이내, 프로젝트별
   if (analysis?.suggestions) {
     const rules = analysis.suggestions
       .filter(s => s.type === 'claude_md' && (!s.project || s.project === project))
@@ -2819,7 +3101,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/prompt-logger.mjs"
+            "command": "node $HOME/.self-generation/hooks/prompt-logger.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2829,7 +3112,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/tool-logger.mjs"
+            "command": "node $HOME/.self-generation/hooks/tool-logger.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2839,7 +3123,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/error-logger.mjs"
+            "command": "node $HOME/.self-generation/hooks/error-logger.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2850,7 +3135,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs"
+            "command": "node $HOME/.self-generation/hooks/pre-tool-guide.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2860,7 +3146,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs"
+            "command": "node $HOME/.self-generation/hooks/subagent-context.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2870,7 +3157,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs"
+            "command": "node $HOME/.self-generation/hooks/subagent-tracker.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -2880,7 +3168,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-summary.mjs"
+            "command": "node $HOME/.self-generation/hooks/session-summary.mjs",
+            "timeout": 10
           }
         ]
       }
@@ -2890,7 +3179,8 @@ try {
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.self-generation/hooks/session-analyzer.mjs"
+            "command": "node $HOME/.self-generation/hooks/session-analyzer.mjs",
+            "timeout": 10
           }
         ]
       }
@@ -2929,7 +3219,23 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_project_type ON events(project_path, type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
+
+-- DESIGN CONSTRAINT (v9): events table is INSERT-only (append-only log).
+-- UPDATE is prohibited to maintain FTS5 index consistency (no UPDATE trigger).
+-- Deletion only occurs via pruneOldEvents() which fires the DELETE trigger.
+
+-- FTS5 full-text search (v9: QMD trigger sync pattern)
+-- Enables keyword search on prompt text and error messages
+CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+  type, text, content='events', content_rowid='id'
+);
+-- Triggers auto-sync FTS index on INSERT/DELETE (see initDb in db.mjs)
 ```
+
+> **설계 변경 (v9)**: QMD의 FTS5 trigger 동기화 패턴을 차용.
+> `events_fts` 가상 테이블이 프롬프트 텍스트와 에러 메시지에 대한 키워드 검색을 지원한다.
+> INSERT/DELETE trigger로 원본 테이블과 FTS 인덱스가 자동 동기화된다.
+> 활용 예: `SELECT * FROM events_fts WHERE events_fts MATCH 'typescript eslint'`
 
 #### data JSON 페이로드 (타입별)
 
@@ -2985,7 +3291,7 @@ CREATE TABLE IF NOT EXISTS error_kb (
   use_count INTEGER DEFAULT 0,      -- KB 검색으로 활용된 횟수
   last_used TEXT                     -- 마지막 활용 시각
 );
-CREATE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_error_kb_error ON error_kb(error_normalized);
 
 -- Vector search virtual table (sqlite-vec)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_error_kb USING vec0(
@@ -2999,6 +3305,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_error_kb USING vec0(
 > 실시간 훅의 벡터 검색도 임베딩 데몬(Unix socket)을 통해 ~5ms로 처리된다.
 > 데몬 미실행 시 텍스트 매칭(정확+접두사)으로 폴백한다.
 > 임계값: distance < 0.76 (고신뢰), 0.76~0.85 (저신뢰+키워드 검증), >= 0.85 (매칭 없음)
+>
+> **검색 순서 (v9)**: QMD의 Strong-signal shortcut 패턴을 차용.
+> 정확 텍스트 매칭(~1ms) → 접두사 매칭(~2ms) → 벡터 유사도(~5ms) 순으로 검색.
+> 정확 매칭이 성공하면 벡터 검색을 건너뛰어 평균 응답 시간을 ~80% 절약한다.
 
 ### 9.3 feedback 테이블 (제안 피드백)
 
@@ -3020,15 +3330,54 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 `analysis-cache.json`을 대체한다. 여러 프로젝트/기간의 캐시를 보관할 수 있다.
 
+> **설계 변경 (v9)**: QMD의 Content-Addressable Storage 패턴을 차용.
+> `input_hash` 컬럼(SHA-256)을 추가하여 동일 입력 데이터에 대한 재분석을 방지한다.
+> 이벤트가 변경되지 않았으면(동일 해시) 캐시된 분석 결과를 재사용한다.
+
 ```sql
 CREATE TABLE IF NOT EXISTS analysis_cache (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT NOT NULL,
   project TEXT,                     -- 'all' 또는 프로젝트명
   days INTEGER,                     -- 분석 기간 (일)
+  input_hash TEXT,                  -- SHA-256 of input events (v9, content-addressable)
   analysis JSON NOT NULL            -- 전체 분석 결과
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_cache_hash
+  ON analysis_cache(project, days, input_hash);
 ```
+
+> **input_hash NULL 정책 (v9)**: `input_hash`는 nullable이다.
+> v8 이전에 저장된 캐시 레코드나, 수동 CLI 실행(`bin/analyze.mjs`)에서 해시 계산을 생략한 경우
+> NULL이 될 수 있다. SQLite의 UNIQUE 제약은 NULL을 고유값으로 취급하지 않으므로,
+> `input_hash`가 NULL인 레코드는 중복 삽입이 가능하다. 이는 의도된 동작이며,
+> `INSERT OR REPLACE`가 동일 `(project, days, input_hash)` 키를 덮어쓰므로 무한 증가하지 않는다.
+> 다만 삭제된 프로젝트의 오래된 캐시는 잔류할 수 있으며, 필요시 수동 정리한다.
+> 새 분석은 항상 해시를 포함해야 하며(`computeInputHash()` 사용 필수),
+> NULL 해시 레코드는 캐시 히트 대상에서 제외된다 (WHERE input_hash = ? 조건).
+>
+> **캐시 히트 로직 (v9)**: AI 분석 실행 전 입력 이벤트의 SHA-256 해시를 계산하고,
+> `analysis_cache`에서 동일 `(project, days, input_hash)` 조합을 조회한다.
+> 히트 시 `claude --print` 호출을 스킵하여 API 비용과 시간을 절약한다.
+>
+> ```javascript
+> import { createHash } from 'crypto';
+>
+> function computeInputHash(events) {
+>   // Include data payload for content-level dedup (not just metadata)
+>   const content = events.map(e =>
+>     `${e.type}:${e.ts}:${e.session_id}:${JSON.stringify(e.data)}`
+>   ).join('\n');
+>   return createHash('sha256').update(content).digest('hex');
+> }
+>
+> // In ai-analyzer.mjs, before calling claude --print:
+> const hash = computeInputHash(events);
+> const cached = db.prepare(
+>   'SELECT analysis FROM analysis_cache WHERE project = ? AND days = ? AND input_hash = ?'
+> ).get(project, days, hash);
+> if (cached) return JSON.parse(cached.analysis); // Cache hit — skip AI call
+> ```
 
 ### 9.5 skill_embeddings 테이블 (스킬 벡터 임베딩, v8 신규)
 
@@ -3097,8 +3446,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
 
 | 원칙 | 구현 |
 |------|------|
-| 로컬 전용 | 모든 데이터는 `~/.self-generation/data/self-gen.db` (SQLite)에만 저장 |
-| 네트워크 전송 없음 | 분석은 로컬에서만 실행, 외부 API 호출 없음 |
+| 로컬 저장 | 모든 수집 데이터는 `~/.self-generation/data/self-gen.db` (SQLite)에만 저장 |
+| 최소 네트워크 | 수집·검색은 완전 로컬. AI 분석(`claude --print`)만 Anthropic API를 통해 요약 데이터 전송. `collectPromptText: false` 시 프롬프트 원문 미포함 |
 | 최소 수집 | 도구 입력의 전체가 아닌 메타 정보만 기록 |
 | 삭제 가능 | `rm ~/.self-generation/data/self-gen.db*`로 완전 삭제 (WAL/SHM 포함) |
 
@@ -3118,7 +3467,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_skill_embeddings USING vec0(
   ✗ 도구 응답 본문
   ✗ 환경 변수
   ✗ .env, credentials 등 민감 파일 경로
+  ✗ <private>...</private> 태그로 감싼 프롬프트 내용 (v9, [PRIVATE]로 치환)
 ```
+
+> **설계 변경 (v9)**: claude-mem의 `<private>` 태그 패턴을 차용.
+> 사용자가 프롬프트에서 `<private>비밀번호는 abc123</private>`처럼 감싸면
+> DB에는 `[PRIVATE]`로 치환되어 저장된다. Hook 레이어(edge)에서 처리하므로
+> 민감 정보가 DB에 도달하지 않는다.
 
 ### 10.3 데이터 최소화 모드
 
@@ -3136,6 +3491,34 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 전역 `~/.self-generation/`은 홈 디렉토리에 있으므로 프로젝트 git에 포함되지 않는다.
 별도의 gitignore 설정이 불필요하다. SQLite DB 파일(`self-gen.db`)과 WAL/SHM 파일이 `data/` 디렉토리에 저장된다.
 
+### 10.5 비활성화 및 제거 (v9)
+
+**일시 비활성화** (데이터 보존):
+```bash
+# config.json에서 enabled: false 설정
+node -e "
+const f = require('os').homedir() + '/.self-generation/config.json';
+const c = JSON.parse(require('fs').readFileSync(f,'utf8'));
+c.enabled = false;
+require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
+"
+# 임베딩 데몬은 30분 idle 후 자동 종료
+```
+
+**완전 제거**:
+```bash
+# 1. settings.json에서 훅 제거 (install.mjs --uninstall 사용)
+node ~/.self-generation/bin/install.mjs --uninstall
+
+# 2. 임베딩 데몬 즉시 종료
+rm -f /tmp/self-gen-embed.sock
+
+# 3. 모든 데이터 및 코드 삭제
+rm -rf ~/.self-generation/
+```
+
+> `--uninstall`은 `settings.json`에서 `.self-generation` 경로를 포함하는 훅만 선택적으로 제거하고, 다른 훅은 보존한다.
+
 ---
 
 ## 11. 구현 로드맵
@@ -3146,15 +3529,14 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 목표: self-gen.db events 테이블에 이벤트가 쌓이는 것까지
 
 작업:
-  1. ~/.self-generation/ 디렉토리 구조 생성
-  2. npm init + better-sqlite3, sqlite-vec 의존성 설치
-  3. lib/db.mjs (SQLite 연결, 스키마 초기화, WAL 모드)
-  4. hooks/prompt-logger.mjs (UserPromptSubmit)
-  5. hooks/tool-logger.mjs (PostToolUse)
-  6. hooks/error-logger.mjs (PostToolUseFailure)
-  7. hooks/session-summary.mjs (SessionEnd, 요약만)
-  8. ~/.claude/settings.json에 훅 등록
-  9. 테스트: 실제 세션에서 DB 수집 확인
+  0. bin/install.mjs 실행 (디렉토리, package.json, 의존성, settings.json 자동 설정)
+     package.json: { "type": "module", deps: better-sqlite3, sqlite-vec, @xenova/transformers }
+  1. lib/db.mjs (SQLite 연결, 스키마 초기화, WAL 모드)
+  2. hooks/prompt-logger.mjs (UserPromptSubmit)
+  3. hooks/tool-logger.mjs (PostToolUse)
+  4. hooks/error-logger.mjs (PostToolUseFailure)
+  5. hooks/session-summary.mjs (SessionEnd, 요약만)
+  6. 테스트: 실제 세션에서 DB 수집 확인
 
 산출물:
   - ~/.self-generation/data/self-gen.db (이벤트 수집 시작)
@@ -3257,6 +3639,32 @@ VALUES (1, 'prompt', '...', 'abc', 'my-app', '/path/to/my-app',
 세션 시작 ─────────────────→ 이전 세션          ──→  컨텍스트 연속성
 ```
 
+### 구현 가이드: 파일별 최종 버전 매핑 (v9)
+
+> 본 문서는 Phase별로 기본 버전과 확장 버전을 모두 수록한다. **구현 시 아래 테이블의 "최종 버전" 절의 코드를 사용하라.** Phase 1 기본 버전은 설계 이해 참고용이며, 실제 구현에는 사용하지 않는다.
+
+| 파일 | Phase 1 기본 (참고용) | 최종 버전 (구현용) | 비고 |
+|------|---------------------|-------------------|------|
+| `hooks/prompt-logger.mjs` | 4.3절 (라인 771) | **8.2절 v6** (라인 2546) | v6가 스킬 감지, privacy tag 포함 |
+| `hooks/tool-logger.mjs` | 4.4절 (라인 808) | **4.4절 그대로** | Phase 1 = 최종 (확장 없음) |
+| `hooks/error-logger.mjs` | 4.5절 (라인 933) | **8.3절 v6** (라인 2174) | v6가 에러 KB 검색 포함 |
+| `hooks/session-summary.mjs` | 4.6절 (라인 947) | **5.4절** (라인 1346) | 확장 버전이 AI 분석+배치 임베딩 포함 |
+| `hooks/session-analyzer.mjs` | — | **5.5절** (라인 1496) | Phase 2부터 신규 |
+| `hooks/pre-tool-guide.mjs` | — | **8.5절** (라인 2768) | Phase 5부터 신규 |
+| `hooks/subagent-tracker.mjs` | — | **8.4절** (라인 2623) | Phase 5부터 신규 |
+| `hooks/subagent-context.mjs` | — | **8.6절** (라인 2835) | Phase 5부터 신규 |
+| `lib/db.mjs` | 3절 (라인 345) | **3절 그대로** | 단일 버전 |
+| `lib/ai-analyzer.mjs` | — | **5절** (라인 1127) | Phase 2부터 신규 |
+| `lib/error-kb.mjs` | — | **8.1절** (라인 2062) | Phase 5부터 신규 |
+| `lib/skill-matcher.mjs` | — | **8.2절** (라인 2501) | Phase 5부터 신규 |
+| `lib/embedding-server.mjs` | — | **8.8절** (라인 2226) | Phase 5부터 신규 |
+| `lib/embedding-client.mjs` | — | **8.9절** (라인 2341) | Phase 5부터 신규 |
+| `lib/feedback-tracker.mjs` | — | **7.1절** (라인 1874) | Phase 4부터 신규 |
+| `bin/install.mjs` | — | **6.1.2절** | v9 신규 |
+| `bin/apply.mjs` | — | **6.1절** (라인 1665) | Phase 3부터 신규 |
+| `bin/dismiss.mjs` | — | **6.1.1절** (라인 1839) | Phase 3부터 신규 |
+| `bin/analyze.mjs` | — | **5.3절** (라인 1549) | Phase 2부터 신규 |
+
 ### 검증 이력 요약
 
 v1~v4 설계 과정에서 총 4회의 Opus 아키텍트 검증을 수행하여 27건의 결함을 발견하고 전량 수정했다.
@@ -3320,12 +3728,46 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 
 ---
 
-## 부록 C: Claude Code Hooks API 참조
+## 부록 C: 외부 프로젝트 차용 패턴 (v9)
+
+> 소스: `references/three-systems-comparison.md` (3개 시스템 비교 연구)
+
+### C.1 차용 패턴 목록
+
+| # | 패턴 | 출처 | 적용 위치 | Phase |
+|---|------|------|----------|-------|
+| 1 | Privacy 태그 스트리핑 | claude-mem (`<private>`) | `lib/db.mjs` → `stripPrivateTags()`, `prompt-logger.mjs` | 1 |
+| 2 | Content-Addressable 분석 캐시 | QMD (SHA-256 해시) | `analysis_cache` 테이블 `input_hash` 컬럼, `ai-analyzer.mjs` | 2 |
+| 3 | FTS5 trigger 동기화 | QMD (FTS5 + triggers) | `events_fts` 가상 테이블, `queryEvents()` `search` 필터 | 1 |
+| 4 | Strong-signal shortcut | QMD (BM25 ≥ 0.85 → 벡터 스킵) | `error-kb.mjs` → `searchErrorKB()` 텍스트 우선 검색 | 5 |
+
+### C.2 검토 후 미채택 패턴
+
+| 패턴 | 출처 | 미채택 사유 |
+|------|------|-----------|
+| Worker 위임 패턴 | claude-mem | 현재 훅이 충분히 가벼움 (~10ms), 불필요한 인프라 추가 |
+| Chroma Vector DB | claude-mem | sqlite-vec가 self-generation 규모에 충분, Python 의존성 회피 |
+| 리랭킹/쿼리 확장 | QMD | 에러 KB/스킬 매칭에는 과잉 설계, GGUF 모델 2GB 추가 부담 |
+| 종속성 도입 (claude-mem) | claude-mem | 데이터 형태 불일치 (observation vs event), AGPL 오염 위험 |
+| 종속성 도입 (QMD) | QMD | 문서 검색 엔진으로 이벤트 데이터 검색에 부적합 |
+
+### C.3 향후 검토 패턴 (Phase 5 이후)
+
+| 패턴 | 출처 | 적용 시점 |
+|------|------|----------|
+| MCP 검색 인터페이스 | claude-mem + QMD | Phase 5 완료 후 — 에러 KB/분석 결과를 MCP로 노출 |
+| Progressive Disclosure | claude-mem | MCP 검색 구현 시 — 인덱스→상세 2단계 응답 |
+| FTS5 + 벡터 하이브리드 RRF 융합 | QMD | 에러 KB 검색 품질 개선이 필요할 때 |
+| Web Viewer UI | claude-mem | 분석 결과/피드백 시각화가 필요할 때 |
+
+---
+
+## 부록 D: Claude Code Hooks API 참조
 
 > 소스: Claude Code 공식 문서 (code.claude.com/docs/en/hooks)
 > 확인일: 2026-02-07
 
-### C.1 전체 훅 이벤트 목록 (12개)
+### D.1 전체 훅 이벤트 목록 (12개)
 
 | 이벤트 | 시점 | matcher 대상 |
 |--------|------|-------------|
@@ -3342,7 +3784,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 | `PreCompact` | 컨텍스트 압축 전 | manual, auto |
 | `SessionEnd` | 세션 종료 | `reason`: clear, logout, prompt_input_exit, other |
 
-### C.2 Hook stdin 공통 필드
+### D.2 Hook stdin 공통 필드
 
 ```json
 {
@@ -3354,7 +3796,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 }
 ```
 
-### C.3 이벤트별 추가 stdin 필드
+### D.3 이벤트별 추가 stdin 필드
 
 | 이벤트 | 추가 필드 |
 |--------|----------|
@@ -3368,7 +3810,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 | `SubagentStart` | `agent_id`, `agent_type` |
 | `SubagentStop` | `agent_id`, `agent_type`, `agent_transcript_path` |
 
-### C.4 Hook stdout 출력 형식
+### D.4 Hook stdout 출력 형식
 
 ```json
 {
@@ -3383,7 +3825,7 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 }
 ```
 
-### C.5 Hook 등록 형식 (settings.json)
+### D.5 Hook 등록 형식 (settings.json)
 
 ```json
 {
@@ -3413,14 +3855,14 @@ v2에서 식별된 잔여 리스크(Jaccard 한국어 튜닝, 대용량 JSONL, �
 
 **실행 순서**: 동일 이벤트의 여러 훅은 **병렬 실행**. 순차 실행은 미지원.
 
-### C.6 환경 변수
+### D.6 환경 변수
 
 | 변수 | 사용 가능 이벤트 | 설명 |
 |------|----------------|------|
 | `CLAUDE_PROJECT_DIR` | 모든 이벤트 | 프로젝트 루트 디렉토리 |
 | `CLAUDE_ENV_FILE` | SessionStart만 | 환경변수 영속화 파일 경로 |
 
-### C.7 종료 코드
+### D.7 종료 코드
 
 | 코드 | 의미 |
 |------|------|

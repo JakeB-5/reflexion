@@ -15,19 +15,20 @@ created: 2026-02-07
 
 이 도메인은 다음을 담당합니다:
 
-- (책임 1 설명)
-- (책임 2 설명)
+- AI가 생성한 제안의 적용 및 거부 처리 (CLI 도구)
+- 피드백 추적 (수락률, 스킬 사용률, 규칙 효과성)
+- 피드백 데이터를 AI 프롬프트 컨텍스트로 주입하여 분석 품질 개선
 
 ### 경계 정의
 
-- **포함**: (이 도메인이 다루는 것)
-- **제외**: (이 도메인이 다루지 않는 것)
+- **포함**: 제안 적용 CLI(`apply.mjs`, `dismiss.mjs`), 피드백 추적(`feedback-tracker.mjs`), 3가지 출력 유형 생성
+- **제외**: AI 분석(ai-analysis), 데이터 수집(data-collection), 실시간 검색(realtime-assist)
 
 ---
 
 ## 의존성
 
-이 도메인은 다른 도메인에 의존하지 않습니다.
+- `ai-analysis` — AI 분석 결과(제안) 소비
 
 ---
 
@@ -37,7 +38,8 @@ created: 2026-02-07
 
 | 스펙 ID | 상태 | 설명 |
 |---------|------|------|
-| (스펙이 추가되면 여기에 표시됩니다) | - | - |
+| suggestion-cli | draft | 제안 적용/거부 CLI 도구 (apply.mjs, dismiss.mjs) |
+| feedback-tracker | draft | 피드백 기록, 수락률 계산, 효과성 메트릭 |
 
 ---
 
@@ -47,17 +49,18 @@ created: 2026-02-07
 
 ### 제공하는 기능
 
-- (공개 기능 1)
-- (공개 기능 2)
+- `recordFeedback(suggestionId, action, reason)` — 제안 채택/거부 기록
+- `getFeedbackSummary(projectPath)` — 피드백 요약 조회 (수락률, 효과성)
+- `getSkillUsageRate()` — 스킬 사용률 조회
+- `getUnusedSkills()` — 미사용 스킬 탐지
 
 ### 제공하는 타입/인터페이스
 
-- (공개 타입 1)
-- (공개 타입 2)
+- `FeedbackEntry` — 피드백 기록 스키마
+- `FeedbackSummary` — 피드백 요약 스키마
 
 ---
 
 ## 비고
 
-
-(추가 참고사항이나 설계 결정 배경 등)
+사용자 승인 없이 자동 적용은 금지된다. 피드백 데이터는 정적 임계값 대신 AI 프롬프트 컨텍스트로 주입되어 분석 품질을 개선한다.

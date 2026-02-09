@@ -26,8 +26,8 @@ depends_on:
 - `session-summary.mjs` 확장 — SessionEnd에서 AI 분석 비동기 트리거
 - `session-analyzer.mjs` — SessionStart에서 캐시된 분석 결과 주입
 
-### 데이터
-- `analysis-cache.json` — AI 분석 결과 캐시 (24시간 TTL)
+### 데이터 (SQLite 테이블)
+- `analysis_cache` 테이블 — AI 분석 결과 캐시 (content-addressable, TTL 기반)
 
 ## 핵심 원칙
 - AI 분석은 SessionEnd에서 비동기 실행 (세션 블로킹 없음)

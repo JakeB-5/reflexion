@@ -75,6 +75,6 @@ domain: ai-analysis
 
 ## 의존성
 
-- `data-collection/log-writer`: `getLogFile()`, `readEntries()` 함수
+- `data-collection/log-writer`: `getDb()`, `queryEvents()` 함수
 - `suggestion-engine/feedback-tracker` (Phase 4 이후): `getFeedbackSummary()`
 - `realtime-assist/skill-matcher` (Phase 5 이후): `loadSkills()`

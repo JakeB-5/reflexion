@@ -35,7 +35,7 @@ SessionStart 이벤트에서 캐시된 AI 분석 제안과 이전 세션 컨텍�
 - 적용/거부 CLI 안내 푸터
 
 ### 2.3 이전 세션 컨텍스트 연속성
-- prompt-log.jsonl에서 마지막 `session_summary` 엔트리 조회
+- `events` 테이블에서 마지막 `session_summary` 엔트리 조회
 - `lastPrompts`, `lastEditedFiles`, `uniqueErrors` 정보 추출
 - additionalContext에 이전 세션 컨텍스트 추가
 
@@ -67,4 +67,4 @@ SessionStart 이벤트에서 캐시된 AI 분석 제안과 이전 세션 컨텍�
 ## 의존성
 
 - `ai-analysis/ai-analyzer`: `getCachedAnalysis()` 함수
-- `data-collection/log-writer`: `readStdin()`, `readEntries()` 함수
+- `data-collection/log-writer`: `readStdin()`, `queryEvents()` 함수

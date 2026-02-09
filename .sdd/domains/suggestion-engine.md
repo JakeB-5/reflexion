@@ -25,8 +25,8 @@ depends_on:
 - **CLAUDE.md Directives**: CLAUDE.md에 규칙 추가 (전역/프로젝트)
 - **Hook Workflows**: `hooks/auto/workflow-*.mjs` 생성 + settings.json 등록
 
-### 데이터
-- `feedback.jsonl` — 제안 채택/거부 기록 (FeedbackEntry)
+### 데이터 (SQLite 테이블)
+- `feedback` 테이블 — 제안 채택/거부 기록, 수락률 계산
 
 ## 핵심 원칙
 - 사용자 승인 없이 자동 적용 금지
@@ -44,3 +44,7 @@ depends_on:
 ## 연결 스펙
 - [suggestion-cli](../specs/suggestion-engine/suggestion-cli/spec.md) — 제안 적용/거부 CLI 도구
 - [feedback-tracker](../specs/suggestion-engine/feedback-tracker/spec.md) — 피드백 추적 및 효과성 메트릭
+
+## 비고
+
+Phase 3에서 훅 워크플로우 적용 시 `~/.self-generation/hooks/auto/` 디렉토리가 동적으로 생성된다. 이 디렉토리는 install-cli에서 사전 생성하지 않으며, `suggestion-cli`의 훅 적용 로직에서 재귀적으로 생성한다.

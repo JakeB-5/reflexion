@@ -40,7 +40,7 @@ status: draft
 
 **산출물:**
 - [ ] `~/.self-generation/hooks/tool-logger.mjs` 파일 생성
-- [ ] log-writer.mjs, error-kb.mjs import 설정
+- [ ] db.mjs, error-kb.mjs import 설정
 
 ### Phase 2: 핵심 로직
 
@@ -71,7 +71,7 @@ status: draft
 | 리스크 | 영향도 | 완화 전략 |
 |--------|--------|----------|
 | 해결 감지 오탐 | MEDIUM | 세션 스코프 제한으로 관련 없는 에러 배제 |
-| readEntries 100개 성능 | LOW | 파일 끝에서 읽기로 최적화 |
+| queryEvents 100개 성능 | LOW | SQL LIMIT/ORDER BY 최적화 |
 | error-kb.mjs 부재 (Phase 1) | LOW | import 실패 시 해결 감지 비활성화 |
 
 ---
@@ -87,7 +87,7 @@ status: draft
 ### 통합 테스트
 
 - 에러 → 성공 시퀀스 시뮬레이션
-- error-kb.jsonl 기록 결과 확인
+- `error_kb` 테이블 기록 결과 확인
 
 ---
 

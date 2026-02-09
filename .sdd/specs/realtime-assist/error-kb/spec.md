@@ -29,7 +29,7 @@ constitution_version: "2.0.0"
 CREATE TABLE error_kb (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT NOT NULL,                -- ISO 8601 timestamp
-  error_normalized TEXT NOT NULL,  -- normalizeError() result
+  error_normalized TEXT NOT NULL UNIQUE,  -- normalizeError() result, UNIQUE for UPSERT
   error_raw TEXT,                  -- original error message
   resolution TEXT,                 -- resolution description
   resolved_by TEXT,                -- tool name used to resolve
@@ -37,6 +37,9 @@ CREATE TABLE error_kb (
   use_count INTEGER DEFAULT 0,    -- KB lookup count
   last_used TEXT                   -- last lookup timestamp
 );
+
+-- UNIQUE index on error_normalized (supports UPSERT ON CONFLICT)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_error_kb_normalized ON error_kb(error_normalized);
 
 -- Vector search virtual table (sqlite-vec)
 CREATE VIRTUAL TABLE vec_error_kb USING vec0(
@@ -79,33 +82,36 @@ CREATE VIRTUAL TABLE vec_error_kb USING vec0(
 
 ---
 
-### REQ-RA-002: 에러 KB 검색 (searchErrorKB)
+### REQ-RA-002: 에러 KB 검색 (searchErrorKB) — Strong-signal shortcut
 
 시스템은 에러 메시지로 KB를 검색하여 과거 해결 이력을 반환해야 한다(SHALL).
 
-3단계 검색 전략 (우선순위 순서):
-1. **벡터 유사도 검색 (primary)**: 쿼리 에러의 임베딩을 생성하고, `vec_error_kb` 가상 테이블에서 cosine distance < 0.76 조건으로 의미적으로 유사한 엔트리를 검색한다 (SHALL). `error_kb` 테이블과 JOIN하여 해결 이력이 있는 항목을 반환한다.
-   ```sql
-   SELECT e.*, v.distance
-   FROM vec_error_kb v
-   INNER JOIN error_kb e ON e.id = v.error_kb_id
-   WHERE v.embedding MATCH ? AND k = 1
-     AND e.resolution IS NOT NULL
-   ORDER BY v.distance
-   ```
-2. **정확 텍스트 매치 (fallback 1)**: 벡터 검색 실패 시, 정규화된 에러와 `error_normalized` 필드가 완전히 일치하는 항목을 검색한다 (SHALL).
+QMD의 Strong-signal shortcut 패턴을 차용한 3단계 검색 전략 (우선순위 순서):
+텍스트 매칭을 먼저 시도하고, 정확한 매칭이 없을 때만 벡터 검색으로 폴백한다.
+이유: 정확 매칭은 ~1ms, 벡터 검색은 ~5ms — 정확 매칭 성공 시 80% 시간 절약.
+
+1. **정확 텍스트 매치 (Strong-signal 1)**: 정규화된 에러와 `error_normalized` 필드가 완전히 일치하는 항목을 검색한다 (SHALL). `use_count DESC, ts DESC`로 정렬하여 가장 많이 사용된 최신 이력을 우선한다.
    ```sql
    SELECT * FROM error_kb
    WHERE error_normalized = ? AND resolution IS NOT NULL
-   ORDER BY ts DESC LIMIT 1
+   ORDER BY use_count DESC, ts DESC LIMIT 1
    ```
-3. **접두사 텍스트 매치 (fallback 2)**: 정확 매치도 실패 시, 정규화된 에러의 앞 30자로 `LIKE` 검색을 수행한다 (SHALL).
+2. **접두사 텍스트 매치 (Strong-signal 2)**: 정확 매치 실패 시, 정규화된 에러의 앞 30자로 `LIKE` 검색을 수행한다 (SHALL). 길이 비율(length ratio)이 70% 이상일 때만 유효한 매치로 판정한다(SHALL).
    ```sql
    SELECT * FROM error_kb
    WHERE error_normalized LIKE ? AND resolution IS NOT NULL
-   ORDER BY ts DESC LIMIT 1
+   ORDER BY use_count DESC, ts DESC LIMIT 1
    ```
    (`?`에는 `normalizedError.slice(0, 30) + '%'` 바인딩)
+   - 길이 비율 검증: `min(queryLen, resultLen) / max(queryLen, resultLen) >= 0.7` (SHALL)
+   - 길이 비율 미달 시 벡터 검색으로 폴스루 (SHALL)
+3. **벡터 유사도 검색 (fallback)**: 텍스트 매칭 실패 시에만 실행 (~5ms via daemon) (SHALL). `generateEmbeddings()`로 쿼리 임베딩을 생성하고, `vec_error_kb` 가상 테이블에서 cosine distance < 0.76 조건으로 상위 3건을 검색한다. `resolution`이 있는 항목만 필터링한다.
+   ```javascript
+   const embeddings = await generateEmbeddings([normalizedError]);
+   const vectorResults = vectorSearch('error_kb', 'vec_error_kb', embeddings[0], 3)
+     .filter(r => r.resolution != null);
+   // distance < 0.76이면 매치
+   ```
 
 검색 결과 처리:
 - 매치가 발견되면 해당 엔트리의 `use_count`를 1 증가시키고 `last_used`를 현재 시각으로 갱신해야 한다(SHALL).
@@ -114,26 +120,33 @@ CREATE VIRTUAL TABLE vec_error_kb USING vec0(
   ```
 - DB가 없거나 `error_kb` 테이블이 비어있으면 `null`을 반환해야 한다(SHALL).
 - 해결 이력(`resolution`)이 있는 엔트리만 반환해야 한다(SHALL).
+- 벡터 검색 실패(임베딩 데몬 미실행 등) 시 예외를 흡수하고 `null`을 반환해야 한다(SHALL).
 
-#### Scenario RA-002-1: 벡터 유사도 검색으로 해결 이력 조회
+#### Scenario RA-002-1: 정확 텍스트 매치로 해결 이력 조회 (Strong-signal)
 
-- **GIVEN** `error_kb` 테이블에 `{ error_normalized: "Cannot find module <STR>", resolution: "npm install 실행", embedding: <valid_vector> }` 엔트리가 존재하고, 쿼리 에러의 임베딩과의 cosine distance가 0.15
+- **GIVEN** `error_kb` 테이블에 `{ error_normalized: "Cannot find module <STR>", resolution: "npm install 실행" }` 엔트리가 존재
 - **WHEN** `searchErrorKB("Cannot find module <STR>")`를 호출하면
-- **THEN** 벡터 유사도 검색으로 해당 엔트리를 반환하고, `use_count`가 1 증가하며 `last_used`가 갱신된다
+- **THEN** 정확 텍스트 매치(~1ms)로 해당 엔트리를 반환하고, `use_count`가 1 증가하며 `last_used`가 갱신된다
 
-#### Scenario RA-002-2: 벡터 검색 실패 후 정확 텍스트 매치 Fallback
+#### Scenario RA-002-2: 접두사 매치 성공 (길이 비율 70% 이상)
 
-- **GIVEN** `error_kb`에 임베딩이 없는 엔트리 `{ error_normalized: "TypeError: undefined is not a function", resolution: "null 체크 추가" }`가 존재
-- **WHEN** `searchErrorKB("TypeError: undefined is not a function")`를 호출하면
-- **THEN** 벡터 검색은 결과 없이 실패하고, 정확 텍스트 매치로 해당 엔트리를 반환한다
-
-#### Scenario RA-002-3: 접두사 텍스트 매치 Fallback
-
-- **GIVEN** `error_kb`에 정확 매치는 없지만, `error_normalized` 앞 30자가 검색어와 일치하는 엔트리가 존재
+- **GIVEN** `error_kb`에 정확 매치는 없지만, `error_normalized` 앞 30자가 검색어와 일치하고 길이 비율이 0.8인 엔트리가 존재
 - **WHEN** `searchErrorKB(normalizedError)`를 호출하면
 - **THEN** 접두사 텍스트 매치로 해당 엔트리를 반환한다
 
-#### Scenario RA-002-4: DB 부재 시
+#### Scenario RA-002-3: 접두사 매치 길이 비율 미달 → 벡터 폴백
+
+- **GIVEN** 접두사 매치 결과의 길이 비율이 0.5 (70% 미달)이고, 벡터 검색으로 cosine distance 0.15인 유사 엔트리가 존재
+- **WHEN** `searchErrorKB(normalizedError)`를 호출하면
+- **THEN** 접두사 매치를 무시하고, 벡터 유사도 검색으로 해당 엔트리를 반환한다
+
+#### Scenario RA-002-4: 텍스트 매치 실패 후 벡터 검색 Fallback
+
+- **GIVEN** `error_kb`에 텍스트 정확/접두사 매치가 없지만, 임베딩이 있는 의미적 유사 엔트리(cosine distance 0.15)가 존재
+- **WHEN** `searchErrorKB(normalizedError)`를 호출하면
+- **THEN** 벡터 유사도 검색으로 해당 엔트리를 반환한다
+
+#### Scenario RA-002-5: DB 부재 시
 
 - **GIVEN** `self-gen.db` 파일이 존재하지 않는 환경
 - **WHEN** `searchErrorKB(normalizedError)`를 호출하면
@@ -141,31 +154,46 @@ CREATE VIRTUAL TABLE vec_error_kb USING vec0(
 
 ---
 
-### REQ-RA-003: 에러 해결 기록 (recordResolution)
+### REQ-RA-003: 에러 해결 기록 (recordResolution) — UPSERT 패턴
 
-시스템은 에러가 해결되었을 때 해결 이력을 `error_kb` 테이블에 기록해야 한다(SHALL). 기록 시점에는 임베딩을 생성하지 않는다(성능상 배치 처리).
+시스템은 에러가 해결되었을 때 해결 이력을 `error_kb` 테이블에 기록해야 한다(SHALL). UPSERT 패턴으로 동일 정규화 에러의 중복 엔트리를 방지한다(SHALL). 기록 시점에는 임베딩을 생성하지 않는다(성능상 배치 처리).
 
 기록 내용:
 1. 정규화된 에러 메시지 (`error_normalized`) (SHALL)
 2. 원본 에러 메시지 (`error_raw`) (SHOULD)
-3. 해결 방법 (`resolution`) (SHALL)
+3. 해결 방법 (`resolution`, JSON 문자열) (SHALL)
 4. 해결에 사용된 도구명 (`resolved_by`) (SHOULD)
-5. 해결 도구 시퀀스 (`tool_sequence`, JSON 배열) (SHOULD)
-6. ISO 타임스탬프 `ts`, `use_count: 0` (SHALL)
+5. 해결 도구 시퀀스 (`tool_sequence`, JSON 배열 문자열) (SHOULD)
+6. ISO 타임스탬프 `ts`, `use_count: 1` (SHALL)
 7. 임베딩은 기록하지 않음 — SessionEnd 배치에서 `vec_error_kb`에 별도 생성 (SHALL)
 
+UPSERT SQL:
 ```sql
 INSERT INTO error_kb (ts, error_normalized, error_raw, resolution, resolved_by, tool_sequence, use_count)
-VALUES (?, ?, ?, ?, ?, ?, 0)
+VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(error_normalized) DO UPDATE SET
+  ts = excluded.ts,
+  resolution = excluded.resolution,
+  resolved_by = excluded.resolved_by,
+  tool_sequence = excluded.tool_sequence,
+  use_count = use_count + 1
 ```
 
-#### Scenario RA-003-1: 정상적인 해결 기록
+> **전제조건**: `error_normalized` 컬럼에 UNIQUE 제약 조건이 설정되어 있어야 한다 (9장 스키마 참조).
 
-- **GIVEN** 에러 `"Module not found <STR>"`가 `Edit` 도구 사용 후 해결됨
-- **WHEN** `recordResolution(normalizedError, { errorRaw: "Module not found 'foo'", resolution: "import 경로 수정", resolvedBy: "Edit", toolSequence: ["Read", "Edit"] })`를 호출하면
-- **THEN** `error_kb` 테이블에 해당 필드가 포함된 행이 INSERT된다 (임베딩은 SessionEnd 배치에서 `vec_error_kb`에 생성)
+#### Scenario RA-003-1: 새 에러의 정상적인 해결 기록
 
-#### Scenario RA-003-2: DB가 아직 없을 때
+- **GIVEN** 에러 `"Module not found <STR>"`가 `Edit` 도구 사용 후 해결되었고, 동일 에러가 `error_kb`에 없을 때
+- **WHEN** `recordResolution(normalizedError, { errorRaw: "Module not found 'foo'", resolvedBy: "Edit", toolSequence: ["Read", "Edit"] })`를 호출하면
+- **THEN** `error_kb` 테이블에 `use_count: 1`로 새 행이 INSERT된다 (임베딩은 SessionEnd 배치에서 `vec_error_kb`에 생성)
+
+#### Scenario RA-003-2: 기존 에러 재해결 시 UPSERT
+
+- **GIVEN** `error_kb`에 `error_normalized = "Module not found <STR>"` 엔트리가 `use_count: 3`으로 이미 존재
+- **WHEN** 동일 정규화 에러로 `recordResolution()`을 호출하면
+- **THEN** 기존 행의 `resolution`, `resolved_by`, `tool_sequence`, `ts`가 갱신되고 `use_count`가 4로 증가한다
+
+#### Scenario RA-003-3: DB가 아직 없을 때
 
 - **GIVEN** `self-gen.db` 파일이 존재하지 않는 환경
 - **WHEN** `recordResolution()`을 호출하면

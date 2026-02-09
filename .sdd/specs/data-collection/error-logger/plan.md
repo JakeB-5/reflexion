@@ -40,7 +40,7 @@ status: draft
 
 **산출물:**
 - [ ] `~/.self-generation/hooks/error-logger.mjs` 파일 생성
-- [ ] log-writer.mjs import 설정
+- [ ] db.mjs import 설정
 
 ### Phase 2: 핵심 로직
 
@@ -71,7 +71,7 @@ status: draft
 | 리스크 | 영향도 | 완화 전략 |
 |--------|--------|----------|
 | 정규화 오탐 (과도한 치환) | MEDIUM | 100자 이내 문자열만 치환, 200자 제한 |
-| error-kb.jsonl 손상 | LOW | try-catch로 KB 검색 실패 시 정상 종료 |
+| error_kb 테이블 손상 | LOW | try-catch로 KB 검색 실패 시 정상 종료 |
 | stdout 출력 형식 오류 | MEDIUM | JSON.stringify로 직렬화 보장 |
 
 ---

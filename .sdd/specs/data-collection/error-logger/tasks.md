@@ -18,12 +18,12 @@ completed: 0
 
 ### Phase 1: 기반 구축
 
-- [ ] [P1] `hooks/error-logger.mjs` 파일 생성 및 log-writer import 설정
+- [ ] [P1] `hooks/error-logger.mjs` 파일 생성 및 db.mjs import 설정
 - [ ] [P1] try-catch + `process.exit(0)` non-blocking 래퍼 구조 작성
 
 ### Phase 2: 핵심 구현
 
-- [ ] [P2] ToolErrorEntry 스키마 구성 및 `appendEntry` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `tool`, `error`, `errorRaw`
+- [ ] [P2] ToolErrorEntry 스키마 구성 및 `insertEvent()` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `tool`, `error`, `errorRaw`
 - [ ] [P2] `normalizeError()` 구현 — 경로(`<PATH>`) → 숫자(`<N>`) → 문자열(`<STR>`) 순서 치환 + 200자 제한 + trim
 - [ ] [P2] `searchErrorKB()` 통합 — error-kb.mjs에서 import하여 정규화된 에러로 KB 검색
 - [ ] [P2] `additionalContext` stdout 출력 — KB 매칭 시 `hookSpecificOutput` JSON 형식으로 해결 이력 주입

@@ -18,12 +18,12 @@ completed: 0
 
 ### Phase 1: 기반 구축
 
-- [ ] [P1] `hooks/prompt-logger.mjs` 파일 생성 및 log-writer import 설정
+- [ ] [P1] `hooks/prompt-logger.mjs` 파일 생성 및 db.mjs import 설정
 - [ ] [P1] try-catch + `process.exit(0)` non-blocking 래퍼 구조 작성
 
 ### Phase 2: 핵심 구현
 
-- [ ] [P2] PromptEntry 스키마 구성 및 `appendEntry` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `text`, `charCount`
+- [ ] [P2] PromptEntry 스키마 구성 및 `insertEvent()` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `text`, `charCount`
 - [ ] [P2] 프라이버시 모드 구현 — `loadConfig().collectPromptText === false` 시 `text`를 `"[REDACTED]"`로 대체
 - [ ] [P2] 슬래시 커맨드 감지 및 `skill_used` 이벤트 기록 — `/`로 시작하는 프롬프트에서 스킬명 추출
 

@@ -18,13 +18,13 @@ status: draft
 
 ## 기술 결정
 
-### 결정 1: append-only JSONL 저장
+### 결정 1: SQLite INSERT-only 저장
 
-**근거:** 피드백 데이터의 불변성 보장. 수정/삭제 없이 추가만 허용하여 데이터 손실 방지. JSONL은 라인 단위 파싱으로 대용량 파일에서도 메모리 효율적.
+**근거:** 피드백 데이터의 불변성 보장. 수정/삭제 없이 추가만 허용하여 데이터 손실 방지. SQLite는 WAL 모드로 훅 간 동시 접근을 지원하며, 단일 `self-gen.db` 파일로 관리.
 
 **대안 검토:**
 - JSON 배열 — 전체 읽기/쓰기 필요, 동시성 문제
-- SQLite — 외부 의존성 금지 제약에 위배
+- JSONL 파일 — 라인 단위 파싱 가능하나 쿼리/인덱스 불가
 
 ### 결정 2: 에러 시 null/[] 반환 (예외 미전파)
 
@@ -40,20 +40,20 @@ status: draft
 
 ### Phase 1: 스캐폴딩
 
-모듈 기본 구조 및 상수 정의. `DATA_DIR`, `FEEDBACK_FILE` 경로 설정.
+모듈 기본 구조 및 상수 정의. `db.mjs` 연동 설정.
 
 **산출물:**
 - [ ] `lib/feedback-tracker.mjs` 모듈 구조 (import, 상수, export)
-- [ ] `feedback.jsonl` 스키마 정의 (`{ v, ts, suggestionId, action, ...details }`)
+- [ ] `feedback` 테이블 스키마 정의 (`{ v, ts, suggestionId, action, ...details }`)
 
 ### Phase 2: 핵심 함수
 
 5개 함수 순차 구현. `recordFeedback` → `getFeedbackSummary` → 보조 메트릭 3개.
 
 **산출물:**
-- [ ] `recordFeedback(id, action, details)` — appendFileSync로 JSONL 기록
+- [ ] `recordFeedback(id, action, details)` — `recordFeedback()`로 SQLite `feedback` 테이블에 기록
 - [ ] `getFeedbackSummary()` — 전체 파싱, 채택/거부 집계, 최근 10건 슬라이스
-- [ ] `calcSkillUsageRate()` — prompt-log.jsonl에서 skill_used / skill_created 비율
+- [ ] `calcSkillUsageRate()` — `events` 테이블에서 skill_used / skill_created 비율
 - [ ] `calcRuleEffectiveness()` — tool_error 전체/최근 7일 집계
 - [ ] `findStaleSkills(days)` — 스킬 목록 대비 사용 이력 대조
 
@@ -72,8 +72,8 @@ status: draft
 
 | 리스크 | 영향도 | 완화 전략 |
 |--------|--------|----------|
-| prompt-log.jsonl 대용량 시 파싱 지연 | MEDIUM | 필요 시 라인 스트리밍 도입 (Phase 2에서는 전체 읽기) |
-| JSONL 깨진 라인 | LOW | try-catch로 개별 라인 파싱, 실패 시 skip |
+| `events` 테이블 대용량 시 쿼리 지연 | MEDIUM | 인덱스 활용 및 필요 시 페이지네이션 도입 |
+| SQLite DB 손상 | LOW | WAL 모드 + 정기 무결성 검사 |
 | loadSkills() 함수 미정의 | MEDIUM | findStaleSkills에서 스킬 목록 로드 방법 확정 필요 |
 
 ---
@@ -83,7 +83,7 @@ status: draft
 ### 단위 테스트
 
 - 각 함수별 독립 테스트 (임시 디렉터리에 테스트 파일 생성)
-- 경계 케이스: 빈 파일, 깨진 JSONL 라인, 파일 부재
+- 경계 케이스: 빈 테이블, DB 부재, 잘못된 데이터
 - 커버리지 목표: 80% 이상
 
 ### 통합 테스트
@@ -96,6 +96,6 @@ status: draft
 ## 다음 단계
 
 1. [ ] 이 계획에 대한 검토 및 승인
-2. [ ] log-writer 모듈의 JSONL 읽기 인터페이스 확인 (의존성)
+2. [ ] `db.mjs` 모듈의 SQLite 쿼리 인터페이스 확인 (의존성)
 3. [ ] `loadSkills()` 함수의 스킬 목록 로드 방법 확정
 4. [ ] 구현 시작

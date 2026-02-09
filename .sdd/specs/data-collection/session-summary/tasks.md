@@ -18,14 +18,14 @@ completed: 0
 
 ### Phase 1: 기반 구축
 
-- [ ] [P1] `hooks/session-summary.mjs` 파일 생성 및 log-writer import 설정
+- [ ] [P1] `hooks/session-summary.mjs` 파일 생성 및 db.mjs import 설정
 - [ ] [P1] try-catch + `process.exit(0)` non-blocking 래퍼 구조 작성
 
 ### Phase 2: 핵심 구현
 
-- [ ] [P2] 세션 이벤트 조회 — `readEntries(logFile, { sessionId })` 로 현재 세션 이벤트 필터링
+- [ ] [P2] 세션 이벤트 조회 — `queryEvents({ sessionId })` 로 현재 세션 이벤트 필터링
 - [ ] [P2] 집계 로직 구현 — `promptCount`, `toolCounts` (도구별 횟수 객체), `toolSequence` (시간순 도구명 배열), `errorCount`, `uniqueErrors` (Set 기반 중복 제거)
-- [ ] [P2] SessionSummaryEntry 스키마 구성 및 `appendEntry` 호출
+- [ ] [P2] SessionSummaryEntry 스키마 구성 및 `insertEvent()` 호출
 - [ ] [P2] AI 분석 트리거 조건 구현 — `promptCount >= 3 && reason !== 'clear'` 시 `runAnalysisAsync()` 호출 (Phase 2 활성화)
 
 ### Phase 3: 마무리

@@ -15,19 +15,20 @@ created: 2026-02-07
 
 이 도메인은 다음을 담당합니다:
 
-- (책임 1 설명)
-- (책임 2 설명)
+- `claude --print`를 통한 수집 데이터의 의미 분석
+- 패턴 감지 및 제안 생성 (스킬, CLAUDE.md 지침, 훅 워크플로우)
+- 분석 결과 캐싱 및 SessionStart 시 주입
 
 ### 경계 정의
 
-- **포함**: (이 도메인이 다루는 것)
-- **제외**: (이 도메인이 다루지 않는 것)
+- **포함**: AI 분석 실행(`ai-analyzer.mjs`), 분석 프롬프트 템플릿, 분석 CLI, SessionStart 캐시 주입
+- **제외**: 데이터 수집(data-collection), 제안 적용(suggestion-engine), 실시간 검색(realtime-assist)
 
 ---
 
 ## 의존성
 
-이 도메인은 다른 도메인에 의존하지 않습니다.
+- `data-collection` — 이벤트 데이터 조회(`db.mjs`)
 
 ---
 
@@ -37,7 +38,9 @@ created: 2026-02-07
 
 | 스펙 ID | 상태 | 설명 |
 |---------|------|------|
-| (스펙이 추가되면 여기에 표시됩니다) | - | - |
+| ai-analyzer | draft | claude --print 실행, 캐시 관리, 로그 요약 모듈 |
+| analyze-cli | draft | 수동 AI 분석 실행 CLI 도구 |
+| session-start-hook | draft | SessionStart 캐시 주입 훅 |
 
 ---
 
@@ -47,17 +50,17 @@ created: 2026-02-07
 
 ### 제공하는 기능
 
-- (공개 기능 1)
-- (공개 기능 2)
+- `runAnalysis(options)` — AI 분석 실행 및 결과 반환
+- `getCachedAnalysis(projectPath)` — 캐시된 분석 결과 조회
+- `summarizeForPrompt(events)` — 이벤트 로그를 AI 프롬프트용으로 요약
 
 ### 제공하는 타입/인터페이스
 
-- (공개 타입 1)
-- (공개 타입 2)
+- `AnalysisResult` — AI 분석 결과 스키마 (suggestions, synonymMap, patterns)
+- `AnalysisCacheEntry` — 분석 캐시 엔트리 스키마 (content-addressable)
 
 ---
 
 ## 비고
 
-
-(추가 참고사항이나 설계 결정 배경 등)
+AI 분석은 SessionEnd에서 비동기 실행되며, SessionStart에서는 캐시만 읽는다(<100ms). 프롬프트 5개 미만이면 분석을 생략한다.

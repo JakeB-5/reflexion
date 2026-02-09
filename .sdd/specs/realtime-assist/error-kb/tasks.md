@@ -25,7 +25,7 @@ completed: 0
 ### Phase 2: 핵심 구현
 
 - [ ] [P1] `searchErrorKB(normalizedError)` 구현 — 역순 exact match → substring fallback (앞 30자), useCount 증가
-- [ ] [P1] `recordResolution(normalizedError, resolution)` 구현 — ErrorKBEntry 스키마로 appendFileSync
+- [ ] [P1] `recordResolution(normalizedError, resolution)` 구현 — ErrorKBEntry 스키마로 `error_kb` 테이블에 INSERT
 - [ ] [P2] [->T] `searchErrorKB()` 단위 테스트 — exact match, substring fallback, 파일 부재, resolution 없는 엔트리 스킵
 - [ ] [P2] [->T] `recordResolution()` 단위 테스트 — 정상 기록, 파일 자동 생성, 스키마 검증
 

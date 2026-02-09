@@ -1,79 +1,69 @@
-# SDD 워크플로우 체크리스트
-
-> 각 단계별로 확인해야 할 항목들입니다.
-
+---
+feature: session-summary
+created: 2026-02-09
 ---
 
-## 명세 작성 전
+# 검증 체크리스트: session-summary
 
-- [ ] 기능 요구사항이 명확히 정의됨
-- [ ] 사용자 스토리가 작성됨
-- [ ] 관련 이해관계자와 논의 완료
-- [ ] 기존 기능과의 충돌 여부 확인
+## 스펙 완전성
 
----
+- [ ] REQ-DC-401: 세션 요약 집계 — promptCount/toolCounts/toolSequence/errorCount 등
+- [ ] REQ-DC-402: 세션 이벤트 SQL 집계 — queryEvents 사용
+- [ ] REQ-DC-403: AI 분석 트리거 조건 — 프롬프트 3개 이상, reason !== 'clear'
+- [ ] REQ-DC-404: Non-blocking 실행 보장 — 모든 실패에 exit 0
+- [ ] REQ-DC-405: 배치 임베딩 생성 트리거 — detached spawn, unref()
+- [ ] REQ-DC-406: 확률적 DB 정리 — 10% 확률 pruneOldEvents
+- [ ] REQ-DC-407: 시스템 활성화 체크 — isEnabled() 확인
 
-## 명세 작성 후
+## Constitution 준수
 
-- [ ] RFC 2119 키워드 사용 확인 (SHALL, MUST, SHOULD, MAY)
-- [ ] GIVEN-WHEN-THEN 시나리오 포함
-- [ ] 비기능 요구사항 명시
-- [ ] sdd validate 통과
+- [ ] 비차단 훅: 모든 예외 포착, exit 0 보장
+- [ ] 전역 우선: events 테이블 SQL 집계
+- [ ] 스키마 버전: v:1 포함
+- [ ] 명세 우선: 본 스펙 문서 작성 완료
+- [ ] RFC 2119: SHALL/SHOULD 키워드 사용
 
----
+## DESIGN.md 일관성
 
-## 계획 작성 전
+- [ ] 5.4절 SessionEnd 훅 확장 버전 구현
+- [ ] promptCount, toolCounts, toolSequence, errorCount, uniqueErrors 집계
+- [ ] lastPrompts 마지막 3개, 100자 제한
+- [ ] lastEditedFiles Edit/Write 도구, 중복 제거, 최대 5개
+- [ ] reason 필드 기록
+- [ ] runAnalysisAsync() 호출 (ai-analyzer.mjs)
+- [ ] batch-embeddings.mjs detached spawn
 
-- [ ] 명세가 승인됨
-- [ ] 기술 스택 결정됨
-- [ ] 아키텍처 검토 완료
-- [ ] 의존성 확인
+## 의존성 검증
 
----
+- [ ] data-collection/log-writer: insertEvent(), queryEvents(), pruneOldEvents(), isEnabled(), readStdin()
+- [ ] ai-analysis/ai-analyzer: runAnalysisAsync()
 
-## 계획 작성 후
+## GIVEN-WHEN-THEN 시나리오
 
-- [ ] 구현 단계가 명확히 정의됨
-- [ ] 리스크 분석 완료
-- [ ] 테스트 전략 수립
-- [ ] 헌법 준수 사항 확인
+- [ ] REQ-DC-401: 7개 시나리오 (정상 요약, toolCounts, toolSequence, uniqueErrors, lastPrompts, lastEditedFiles, reason)
+- [ ] REQ-DC-402: 2개 시나리오 (세션 조회, 빈 세션)
+- [ ] REQ-DC-403: 4개 시나리오 (분석 트리거, 스킵 조건 2개, 프롬프트 부족)
+- [ ] REQ-DC-404: 2개 시나리오 (DB 실패, 분석 실패)
+- [ ] REQ-DC-405: 2개 시나리오 (detached spawn, unref 분리)
+- [ ] REQ-DC-406: 2개 시나리오 (10% 확률, 실패 무시)
+- [ ] REQ-DC-407: 1개 시나리오 (시스템 비활성화)
 
----
+## 테스트 시나리오 커버리지
 
-## 구현 전
+- [ ] 세션 집계: queryEvents, type별 필터링, 카운트 계산
+- [ ] toolCounts: 도구별 횟수 집계
+- [ ] toolSequence: 시간 순서 배열
+- [ ] uniqueErrors: 중복 제거 (Set 사용)
+- [ ] lastPrompts: slice(-3), 100자 제한
+- [ ] lastEditedFiles: Edit/Write 필터, 중복 제거, 최대 5개
+- [ ] AI 분석: 조건 분기, runAnalysisAsync 호출
+- [ ] 배치 임베딩: spawn detached, unref, stdio ignore
+- [ ] DB 정리: Math.random() < 0.1, pruneOldEvents
+- [ ] 에러 처리: try-catch, exit 0 보장
+- [ ] isEnabled: config.enabled=false 시 즉시 종료
 
-- [ ] 작업이 분해됨 (tasks.md)
-- [ ] 브랜치가 생성됨
-- [ ] 개발 환경 준비
-- [ ] 관련 테스트 환경 확인
+## 비고
 
----
-
-## 구현 후
-
-- [ ] 모든 작업 완료
-- [ ] 단위 테스트 작성 및 통과
-- [ ] 통합 테스트 통과
-- [ ] 코드 커버리지 목표 달성 (80%+)
-- [ ] 린트 및 타입 체크 통과
-
----
-
-## 리뷰 전
-
-- [ ] 셀프 코드 리뷰 완료
-- [ ] 문서 업데이트
-- [ ] PR 설명 작성
-- [ ] 테스트 결과 첨부
-
----
-
-## 리뷰 후
-
-- [ ] 리뷰 피드백 반영
-- [ ] 최종 테스트 통과
-- [ ] 스펙 상태 업데이트
-- [ ] 아카이브 준비
-
----
-
+- SessionEnd는 Phase 1~5 기능의 통합 트리거 (AI 분석, 배치 임베딩, DB 정리)
+- 비동기 작업은 모두 detached로 실행하여 훅 블로킹 방지
+- 빈 세션도 요약 기록 (0 카운트, 빈 배열)

@@ -24,7 +24,7 @@ domain: ai-analysis
 
 - [ ] [P2] `getCachedAnalysis(24)` 호출 및 suggestions 존재 여부 분기
 - [ ] [P2] `formatSuggestionsForContext()` 구현 — 최대 3개 제안 포맷팅
-- [ ] [P2] 이전 세션 컨텍스트 조회 — prompt-log.jsonl에서 마지막 session_summary 읽기
+- [ ] [P2] 이전 세션 컨텍스트 조회 — `events` 테이블에서 마지막 session_summary 읽기
 - [ ] [P2] 세션 재개 감지 — `source === 'resume'` 시 `[RESUME]` 태그 + 미해결 에러 주입
 - [ ] [P2] stdout JSON 출력 — `hookSpecificOutput.additionalContext` 형식
 

@@ -18,12 +18,12 @@ completed: 0
 
 ### Phase 1: 기반 구축
 
-- [ ] [P1] `hooks/tool-logger.mjs` 파일 생성 및 log-writer, error-kb import 설정
+- [ ] [P1] `hooks/tool-logger.mjs` 파일 생성 및 db.mjs, error-kb import 설정
 - [ ] [P1] try-catch 이중 래퍼 구조 작성 (외부: 전체, 내부: 해결 감지)
 
 ### Phase 2: 핵심 구현
 
-- [ ] [P2] ToolUseEntry 스키마 구성 및 `appendEntry` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `tool`, `meta`, `success`
+- [ ] [P2] ToolUseEntry 스키마 구성 및 `insertEvent()` 호출 — `v`, `type`, `ts`, `sessionId`, `project`, `projectPath`, `tool`, `meta`, `success`
 - [ ] [P2] `extractToolMeta()` 구현 — Bash(첫 단어), Read/Write/Edit(파일 경로), Grep/Glob(패턴), Task(에이전트 정보), 기본(빈 객체)
 - [ ] [P2] 동일 도구 해결 감지 구현 — 최근 100개 엔트리에서 세션 내 동일 도구 에러 → 성공 패턴 감지 + `recordResolution` 호출
 - [ ] [P2] 크로스 도구 해결 감지 구현 — 다른 도구 에러가 현재 도구의 도움으로 해결된 패턴 감지
